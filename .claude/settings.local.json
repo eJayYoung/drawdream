@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm view:*)",
+      "Bash(pnpm:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(docker --version)",
+      "Bash(docker compose:*)",
+      "Bash(open -a Docker)",
+      "Bash(docker info:*)",
+      "Bash(node dist/main.js)",
+      "Bash(npx tsc:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(npx nest:*)",
+      "Bash(curl -s http://localhost:3001/api/docs)",
+      "Bash(ls:*)",
+      "Bash(xargs kill:*)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/phone/send-code -H \"Content-Type: application/json\" -d '{\"phone\":\"13800138000\"}')",
+      "Bash(curl:*)",
+      "WebFetch(domain:minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com)"
+    ]
+  }
+}

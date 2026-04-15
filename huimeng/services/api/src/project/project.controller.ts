@@ -1,0 +1,145 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ProjectService } from './project.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+@ApiTags('项目')
+@Controller('projects')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
+export class ProjectController {
+  constructor(private readonly projectService: ProjectService) {}
+
+  @Get()
+  @ApiOperation({ summary: '获取项目列表' })
+  async findAll(@Request() req: any) {
+    const projects = await this.projectService.findAllByUser(req.user.id);
+    return projects.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      aspectRatio: p.aspectRatio,
+      style: p.style,
+      imageModel: p.imageModel,
+      videoModel: p.videoModel,
+      coverImageUrl: p.coverImageUrl,
+      status: p.status,
+      episodeCount: p.episodeCount || 0,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    }));
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: '获取项目详情' })
+  async findOne(@Param('id') id: string) {
+    const project = await this.projectService.findById(id);
+    return {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      aspectRatio: project.aspectRatio,
+      style: project.style,
+      imageModel: project.imageModel,
+      videoModel: project.videoModel,
+      coverImageUrl: project.coverImageUrl,
+      status: project.status,
+      episodes: [],
+      characters: [],
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+    };
+  }
+
+  @Post()
+  @ApiOperation({ summary: '创建项目' })
+  async create(@Request() req: any, @Body() dto: any) {
+    const project = await this.projectService.create(req.user.id, dto);
+    return { id: project.id, name: project.name };
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: '更新项目' })
+  async update(@Param('id') id: string, @Body() dto: any) {
+    const project = await this.projectService.update(id, dto);
+    return { id: project.id };
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '删除项目' })
+  async delete(@Param('id') id: string) {
+    await this.projectService.delete(id);
+    return { success: true };
+  }
+
+  @Get(':id/episodes')
+  @ApiOperation({ summary: '获取分集列表' })
+  async findEpisodes(@Param('id') id: string) {
+    const episodes = await this.projectService.findEpisodes(id);
+    return episodes.map((e: any) => ({
+      id: e.id,
+      episodeNumber: e.episodeNumber,
+      title: e.title,
+      status: e.status,
+      estimatedDuration: e.estimatedDuration,
+    }));
+  }
+
+  @Post(':id/episodes')
+  @ApiOperation({ summary: '创建分集' })
+  async createEpisode(@Param('id') id: string, @Body() dto: any) {
+    const episode = await this.projectService.createEpisode(id, dto);
+    return { id: episode.id };
+  }
+
+  @Put('episodes/:episodeId')
+  @ApiOperation({ summary: '更新分集' })
+  async updateEpisode(@Param('episodeId') episodeId: string, @Body() dto: any) {
+    const episode = await this.projectService.updateEpisode(episodeId, dto);
+    return { id: episode.id };
+  }
+
+  @Get(':id/characters')
+  @ApiOperation({ summary: '获取角色列表' })
+  async findCharacters(@Param('id') id: string) {
+    const characters = await this.projectService.findCharacters(id);
+    return characters.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      voiceType: c.voiceType,
+      imageUrls: c.imageUrls || [],
+    }));
+  }
+
+  @Post(':id/characters')
+  @ApiOperation({ summary: '创建角色' })
+  async createCharacter(@Param('id') id: string, @Body() dto: any) {
+    const character = await this.projectService.createCharacter(id, dto);
+    return { id: character.id };
+  }
+
+  @Put('characters/:characterId')
+  @ApiOperation({ summary: '更新角色' })
+  async updateCharacter(@Param('characterId') characterId: string, @Body() dto: any) {
+    const character = await this.projectService.updateCharacter(characterId, dto);
+    return { id: character.id };
+  }
+
+  @Delete('characters/:characterId')
+  @ApiOperation({ summary: '删除角色' })
+  async deleteCharacter(@Param('characterId') id: string) {
+    await this.projectService.deleteCharacter(id);
+    return { success: true };
+  }
+}

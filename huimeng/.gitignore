@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+.next
+out
+build
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage
+
+# Turbo
+.turbo
+
+# MikroORM
+*.db
+*.db-journal
+
+# ComfyUI models (should be mounted externally)
+services/comfyui/models/*
+!services/comfyui/models/.gitkeep
+
+# Output files
+services/comfyui/output/*
+!services/comfyui/output/.gitkeep
+
+# SSL certificates
+infra/nginx/ssl
