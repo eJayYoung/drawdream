@@ -84,6 +84,8 @@ export class GenerationGateway
       storyboardId?: string;
       status: string;
       progress: number;
+      outputResult?: Record<string, unknown>;
+      error?: string;
     },
   ) {
     this.server.to(`project:${projectId}`).emit('generation_progress', data);

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sshpass:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://36.139.149.26:8200/)"
+    ]
+  }
+}

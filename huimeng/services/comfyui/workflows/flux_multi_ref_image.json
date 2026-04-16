@@ -1,0 +1,489 @@
+{
+  "6": {
+    "inputs": {
+      "text": "图1是买烟5岁小男孩，图2是香烟店老板，图3是地点：写实风格，电影感镜头，室内场景：街角香烟店内。相机位于香烟店老板的同一侧，老板站在桌边（画面右侧），画面中只露出他的后脑勺和右耳（模糊虚化），背后是白墙和货架。镜头越过老板的肩膀小角度俯视，焦点锁定在柜台对面的刚从屋外进来的一个5岁小男孩身上（画面左侧）。男孩站在桌边，一只手放在桌角，眼睛明亮，神情认真而真诚的看着老板，男孩穿着蓝白相间校服。老板与男孩之间隔着一个老式木质柜台。店内光线柔和，从街边玻璃门透入自然光。整体色调偏暖，略带复古感。所有元素保持静态，无额外人物或杂物，画面左右两侧不要出现多余的木椅。\n",
+      "clip": [
+        "88",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "提示词"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "13",
+        0
+      ],
+      "vae": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "Flux2",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "10": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "13": {
+    "inputs": {
+      "noise": [
+        "25",
+        0
+      ],
+      "guider": [
+        "22",
+        0
+      ],
+      "sampler": [
+        "16",
+        0
+      ],
+      "sigmas": [
+        "48",
+        0
+      ],
+      "latent_image": [
+        "47",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器（高级）"
+    }
+  },
+  "16": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "22": {
+    "inputs": {
+      "model": [
+        "83",
+        0
+      ],
+      "conditioning": [
+        "73",
+        0
+      ]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {
+      "title": "基本引导器"
+    }
+  },
+  "25": {
+    "inputs": {
+      "noise_seed": 500952218864318
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
+    }
+  },
+  "26": {
+    "inputs": {
+      "guidance": 4,
+      "conditioning": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "Flux引导"
+    }
+  },
+  "39": {
+    "inputs": {
+      "conditioning": [
+        "43",
+        0
+      ],
+      "latent": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "40": {
+    "inputs": {
+      "pixels": [
+        "90",
+        0
+      ],
+      "vae": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "42": {
+    "inputs": {
+      "image": "老人1.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "43": {
+    "inputs": {
+      "conditioning": [
+        "26",
+        0
+      ],
+      "latent": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "44": {
+    "inputs": {
+      "pixels": [
+        "93",
+        0
+      ],
+      "vae": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "46": {
+    "inputs": {
+      "image": "comfyui-airport-editorial_00051_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "47": {
+    "inputs": {
+      "width": [
+        "94",
+        0
+      ],
+      "height": [
+        "94",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "空Latent图像（Flux2）"
+    }
+  },
+  "48": {
+    "inputs": {
+      "steps": 8,
+      "width": [
+        "94",
+        0
+      ],
+      "height": [
+        "94",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2调度器"
+    }
+  },
+  "70": {
+    "inputs": {
+      "pixels": [
+        "91",
+        0
+      ],
+      "vae": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "71": {
+    "inputs": {
+      "image": "22.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "73": {
+    "inputs": {
+      "conditioning": [
+        "39",
+        0
+      ],
+      "latent": [
+        "70",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "83": {
+    "inputs": {
+      "unet_name": "flux-2-klein-9b.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "88": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "90": {
+    "inputs": {
+      "aspect_ratio": "original",
+      "proportional_width": 1,
+      "proportional_height": 1,
+      "fit": "letterbox",
+      "method": "lanczos",
+      "round_to_multiple": "16",
+      "scale_to_side": "longest",
+      "scale_to_length": 1680,
+      "background_color": "#000000",
+      "image": [
+        "42",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "_meta": {
+      "title": "LayerUtility: ImageScaleByAspectRatio V2"
+    }
+  },
+  "91": {
+    "inputs": {
+      "aspect_ratio": "original",
+      "proportional_width": 1,
+      "proportional_height": 1,
+      "fit": "letterbox",
+      "method": "lanczos",
+      "round_to_multiple": "16",
+      "scale_to_side": "longest",
+      "scale_to_length": 1680,
+      "background_color": "#000000",
+      "image": [
+        "71",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "_meta": {
+      "title": "LayerUtility: ImageScaleByAspectRatio V2"
+    }
+  },
+  "93": {
+    "inputs": {
+      "aspect_ratio": "original",
+      "proportional_width": 1,
+      "proportional_height": 1,
+      "fit": "letterbox",
+      "method": "lanczos",
+      "round_to_multiple": "16",
+      "scale_to_side": "longest",
+      "scale_to_length": 1680,
+      "background_color": "#000000",
+      "image": [
+        "46",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "_meta": {
+      "title": "LayerUtility: ImageScaleByAspectRatio V2"
+    }
+  },
+  "94": {
+    "inputs": {
+      "use_custom_resolution": false,
+      "resolution": "1920x1080 (16:9) (横屏)",
+      "custom_width": 1024,
+      "custom_height": 1024
+    },
+    "class_type": "TTResolutionSelector",
+    "_meta": {
+      "title": "TT分辨率选择器"
+    }
+  },
+  "95": {
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "97": {
+    "inputs": {
+      "model_name": "Qwen3-VL-8B-Instruct",
+      "quantization": "4-bit (VRAM-friendly)",
+      "attention_mode": "auto",
+      "preset_prompt": "🖼️ Detailed Description",
+      "custom_prompt": [
+        "99",
+        0
+      ],
+      "max_tokens": 512,
+      "keep_model_loaded": true,
+      "seed": 1758670184,
+      "image": [
+        "104",
+        0
+      ]
+    },
+    "class_type": "AILab_QwenVL",
+    "_meta": {
+      "title": "QwenVL"
+    }
+  },
+  "98": {
+    "inputs": {
+      "value": "白天，图1小孩在门和柜台之前，柜台前边，小孩的背是朝向门的方向的，手上拿着皱巴巴的几张一元钱，递到柜台之上，不好意思地看向老板，图2老板老头在柜台和墙之间，柜台后边,没有去接钱，图3是小卖部内部场景，请遵守柜台的真实合理性，老板在柜台里边，小孩在柜台外边。镜头在老板的身后，左肩靠上一点点，越过老头，俯视小角度看向小孩。画面里只有2个人。图1小孩面对镜头，图2老板背对镜头，看不见老板的脸！！！！"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "提示词"
+    }
+  },
+  "99": {
+    "inputs": {
+      "string_a": [
+        "98",
+        0
+      ],
+      "string_b": [
+        "100",
+        0
+      ],
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "100": {
+    "inputs": {
+      "text": "你是一个专业的电影导演，负责将用户的人物关系在场景上的细节完善得更好，也要注意场景的事物和人物的合理性。并且将这些信息转换成大模型更易识别的文本。"
+    },
+    "class_type": "CR Text",
+    "_meta": {
+      "title": "🔤 CR Text"
+    }
+  },
+  "102": {
+    "inputs": {
+      "output_file_path": "output",
+      "file_name": "qwen-2511_",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "保存文本"
+    }
+  },
+  "104": {
+    "inputs": {
+      "inputcount": 3,
+      "Update inputs": null,
+      "image_1": [
+        "46",
+        0
+      ],
+      "image_2": [
+        "42",
+        0
+      ],
+      "image_3": [
+        "71",
+        0
+      ]
+    },
+    "class_type": "ImageBatchMulti",
+    "_meta": {
+      "title": "Image Batch Multi"
+    }
+  }
+}

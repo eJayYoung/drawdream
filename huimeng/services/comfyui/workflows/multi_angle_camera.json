@@ -1,0 +1,282 @@
+{
+  "1": {
+    "inputs": {
+      "unet_name": "qwen_image_edit_2511_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "4": {
+    "inputs": {
+      "lora_name": "qwen-image-edit-2511-multiple-angles-lora.safetensors",
+      "strength_model": 0.9,
+      "model": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "5": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "7": {
+    "inputs": {
+      "image": "Flux2_00034_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "8": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-fp32.safetensors",
+      "strength_model": 1,
+      "model": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "10": {
+    "inputs": {
+      "seed": 865480576423759,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "31",
+        0
+      ],
+      "negative": [
+        "32",
+        0
+      ],
+      "latent_image": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "13": {
+    "inputs": {
+      "horizontal_angle": 34,
+      "vertical_angle": 0,
+      "zoom": 5,
+      "default_prompts": false,
+      "camera_view": false,
+      "image": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "QwenMultiangleCameraNode",
+    "_meta": {
+      "title": "Qwen Multiangle Camera"
+    }
+  },
+  "15": {
+    "inputs": {
+      "samples": [
+        "10",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "25": {
+    "inputs": {
+      "pixels": [
+        "27",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "27": {
+    "inputs": {
+      "width": [
+        "28",
+        0
+      ],
+      "height": [
+        "28",
+        1
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "stretch",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "28": {
+    "inputs": {
+      "use_custom_resolution": false,
+      "resolution": "1920x1080 (16:9) (横屏)",
+      "custom_width": 1024,
+      "custom_height": 1024
+    },
+    "class_type": "TTResolutionSelector",
+    "_meta": {
+      "title": "TT分辨率选择器"
+    }
+  },
+  "29": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "30": {
+    "inputs": {
+      "prompt": [
+        "40",
+        0
+      ],
+      "clip": [
+        "5",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ],
+      "image1": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "文本编码（QwenImageEditPlus）"
+    }
+  },
+  "31": {
+    "inputs": {
+      "conditioning": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "32": {
+    "inputs": {
+      "prompt": "泛黄，AI感，不真实，丑陋，油腻的皮肤，异常的肢体，不协调的肢体",
+      "clip": [
+        "5",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ],
+      "image1": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "文本编码（QwenImageEditPlus）"
+    }
+  },
+  "39": {
+    "inputs": {
+      "prompt": "<sks> [人物的站位、眼神方向保持不变] \n<sks> [色彩真实，无滤镜] "
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "⚙️ CR Prompt Text"
+    }
+  },
+  "40": {
+    "inputs": {
+      "separator": "",
+      "text1": [
+        "39",
+        0
+      ],
+      "text2": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "CR Text Concatenate",
+    "_meta": {
+      "title": "🔤 CR Text Concatenate"
+    }
+  }
+}

@@ -62,6 +62,19 @@ export class WorkflowController {
     }));
   }
 
+  @Post('projects/:projectId/characters')
+  @ApiOperation({ summary: '生成角色' })
+  async generateCharacters(
+    @Param('projectId') projectId: string,
+    @Body() body: { scriptContent: string },
+  ) {
+    const characters = await this.workflowService.generateCharacters(
+      projectId,
+      body.scriptContent,
+    );
+    return characters;
+  }
+
   @Post('episodes/:episodeId/storyboards')
   @ApiOperation({ summary: '生成分镜' })
   async generateStoryboards(

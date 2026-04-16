@@ -34,7 +34,7 @@ export class ProjectController {
       videoModel: p.videoModel,
       coverImageUrl: p.coverImageUrl,
       status: p.status,
-      episodeCount: p.episodeCount || 0,
+      episodeCount: (p.episodesData && p.episodesData.length) || (p.episodes && p.episodes.length) || 0,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
     }));
@@ -54,8 +54,15 @@ export class ProjectController {
       videoModel: project.videoModel,
       coverImageUrl: project.coverImageUrl,
       status: project.status,
-      episodes: [],
-      characters: [],
+      // 创作内容回填
+      scriptContent: project.scriptContent,
+      episodesData: project.episodesData || project.episodes || [],
+      charactersData: project.charactersData || project.characters || [],
+      storyboardsData: project.storyboardsData || [],
+      imagesData: project.imagesData || [],
+      videoUrl: project.videoUrl,
+      episodes: project.episodes || [],
+      characters: project.characters || [],
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
     };
@@ -75,6 +82,54 @@ export class ProjectController {
     return { id: project.id };
   }
 
+  // 保存剧本
+  @Post(':id/script')
+  @ApiOperation({ summary: '保存剧本' })
+  async saveScript(@Param('id') id: string, @Body() dto: { scriptContent: any }) {
+    const project = await this.projectService.saveScript(id, dto.scriptContent);
+    return { success: true };
+  }
+
+  // 保存分集
+  @Post(':id/episodes-data')
+  @ApiOperation({ summary: '保存分集数据' })
+  async saveEpisodes(@Param('id') id: string, @Body() dto: { episodesData: any[] }) {
+    const project = await this.projectService.saveEpisodes(id, dto.episodesData);
+    return { success: true };
+  }
+
+  // 保存角色
+  @Post(':id/characters-data')
+  @ApiOperation({ summary: '保存角色数据' })
+  async saveCharacters(@Param('id') id: string, @Body() dto: { charactersData: any[] }) {
+    const project = await this.projectService.saveCharacters(id, dto.charactersData);
+    return { success: true };
+  }
+
+  // 保存分镜
+  @Post(':id/storyboards')
+  @ApiOperation({ summary: '保存分镜数据' })
+  async saveStoryboards(@Param('id') id: string, @Body() dto: { storyboardsData: any[] }) {
+    const project = await this.projectService.saveStoryboards(id, dto.storyboardsData);
+    return { success: true };
+  }
+
+  // 保存分镜图
+  @Post(':id/images')
+  @ApiOperation({ summary: '保存分镜图数据' })
+  async saveImages(@Param('id') id: string, @Body() dto: { imagesData: any[] }) {
+    const project = await this.projectService.saveImages(id, dto.imagesData);
+    return { success: true };
+  }
+
+  // 保存成片
+  @Post(':id/video')
+  @ApiOperation({ summary: '保存成片' })
+  async saveVideo(@Param('id') id: string, @Body() dto: { videoUrl: string; coverImageUrl?: string }) {
+    const project = await this.projectService.saveVideo(id, dto.videoUrl, dto.coverImageUrl);
+    return { success: true };
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: '删除项目' })
   async delete(@Param('id') id: string) {
@@ -90,6 +145,8 @@ export class ProjectController {
       id: e.id,
       episodeNumber: e.episodeNumber,
       title: e.title,
+      summary: e.summary,
+      scriptContent: e.scriptContent,
       status: e.status,
       estimatedDuration: e.estimatedDuration,
     }));
@@ -116,7 +173,11 @@ export class ProjectController {
     return characters.map((c: any) => ({
       id: c.id,
       name: c.name,
-      description: c.description,
+      gender: c.gender,
+      ageGroup: c.ageGroup,
+      role: c.role,
+      personality: c.personality,
+      appearance: c.appearance,
       voiceType: c.voiceType,
       imageUrls: c.imageUrls || [],
     }));

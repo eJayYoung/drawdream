@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { LlmService } from '../common/llm.service';
+import { ProjectService } from '../project/project.service';
 
 @Injectable()
 export class WorkflowService {
@@ -10,7 +11,10 @@ export class WorkflowService {
   private episodes: Map<string, any> = new Map();
   private projects: Map<string, any> = new Map();
 
-  constructor(private readonly llmService: LlmService) {}
+  constructor(
+    private readonly llmService: LlmService,
+    private readonly projectService: ProjectService,
+  ) {}
 
   async generateScript(
     projectId: string,
@@ -38,13 +42,10 @@ export class WorkflowService {
       };
       this.scripts.set(script.id, script);
 
-      // 同时保存到项目对应的剧本
-      this.projects.set(projectId, {
-        ...this.projects.get(projectId),
-        script: script.content,
-      });
+      // 将剧本内容保存到项目表中
+      await this.projectService.saveScript(projectId, result.content);
 
-      this.logger.log(`Script generated successfully for project ${projectId}`);
+      this.logger.log(`Script generated and saved successfully for project ${projectId}`);
       return {
         content: result.content,
         wordCount: result.wordCount,
@@ -84,10 +85,31 @@ export class WorkflowService {
         return episode;
       });
 
-      this.logger.log(`Split into ${episodes.length} episodes`);
+      // 将分集数据保存到项目表中
+      await this.projectService.saveEpisodes(projectId, episodes);
+
+      this.logger.log(`Split into ${episodes.length} episodes and saved`);
       return episodes;
     } catch (error: any) {
       this.logger.error(`Failed to split episodes: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async generateCharacters(projectId: string, scriptContent: string): Promise<any[]> {
+    try {
+      this.logger.log(`Generating characters for project ${projectId}`);
+
+      // 使用阿里百炼API生成角色
+      const characters = await this.llmService.generateCharacters(scriptContent);
+
+      // 将角色数据保存到项目表中
+      await this.projectService.saveCharacters(projectId, characters);
+
+      this.logger.log(`Generated ${characters.length} characters and saved`);
+      return characters;
+    } catch (error: any) {
+      this.logger.error(`Failed to generate characters: ${error.message}`);
       throw error;
     }
   }
@@ -152,7 +174,12 @@ export class WorkflowService {
         this.storyboards.set(storyboard.id, storyboard);
       }
 
-      this.logger.log(`Generated ${storyboards.length} storyboards`);
+      // 获取 episode 对应的 projectId 并保存分镜
+      if (episode) {
+        await this.projectService.saveStoryboards(episode.projectId, storyboards);
+      }
+
+      this.logger.log(`Generated ${storyboards.length} storyboards and saved`);
       return storyboards;
     } catch (error: any) {
       this.logger.error(`Failed to generate storyboards: ${error.message}`);

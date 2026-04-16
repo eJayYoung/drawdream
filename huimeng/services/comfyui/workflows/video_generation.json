@@ -1,0 +1,508 @@
+{
+  "14": {
+    "inputs": {
+      "model_name": "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+    },
+    "class_type": "LatentUpscaleModelLoader",
+    "_meta": {
+      "title": "加载Latent放大模型"
+    }
+  },
+  "15": {
+    "inputs": {
+      "frame_rate": [
+        "132",
+        0
+      ],
+      "positive": [
+        "71",
+        0
+      ],
+      "negative": [
+        "78",
+        0
+      ]
+    },
+    "class_type": "LTXVConditioning",
+    "_meta": {
+      "title": "LTXV条件"
+    }
+  },
+  "30": {
+    "inputs": {
+      "sampler_name": "euler_ancestral_cfg_pp"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "32": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "151",
+        0
+      ],
+      "positive": [
+        "217",
+        0
+      ],
+      "negative": [
+        "217",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG引导器"
+    }
+  },
+  "37": {
+    "inputs": {
+      "noise_seed": 526025586859923
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
+    }
+  },
+  "53": {
+    "inputs": {
+      "clip_name1": "gemma_3_12B_it_fp8_e4m3fn.safetensors",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "双CLIP加载器"
+    }
+  },
+  "56": {
+    "inputs": {
+      "vae_name": "LTX23_video_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "60": {
+    "inputs": {
+      "vae_name": "LTX23_audio_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "VAELoader KJ"
+    }
+  },
+  "63": {
+    "inputs": {
+      "noise": [
+        "37",
+        0
+      ],
+      "guider": [
+        "32",
+        0
+      ],
+      "sampler": [
+        "30",
+        0
+      ],
+      "sigmas": [
+        "138",
+        0
+      ],
+      "latent_image": [
+        "147",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器（高级）"
+    }
+  },
+  "64": {
+    "inputs": {
+      "av_latent": [
+        "63",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXV分离音视频潜空间"
+    }
+  },
+  "65": {
+    "inputs": {
+      "samples": [
+        "64",
+        1
+      ],
+      "audio_vae": [
+        "60",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEDecode",
+    "_meta": {
+      "title": "LTXV音频VAE解码"
+    }
+  },
+  "71": {
+    "inputs": {
+      "text": "\n  \"prompt\": \"4K 50fps 杜比视界 电影质感，极高真实度。场景为街角老香烟店，白天，柔和的自然光从门口和窗户透进来，形成自然光影。全片采用严格的硬切转场，拒绝任何叠化或溶解特效。配乐为轻柔钢琴曲，缓慢抒情。每个镜头内只有一个角色出现，角色动作以面部表情和呼吸微动为主，双手保持固定姿态。\",\n  \"scene\": \n    \"scene_name\": \"街角老香烟店_组9\",\n    \"scene_type\": \"内景\",\n    \"time_period\": \"白天\",\n    \"env_attr\": \"老式香烟店、木质柜台、自然光\",\n    \"space_attr\": \"狭窄、温暖、怀旧\",\n    \"light_attr\": \"自然柔光、局部阴影\",\n    \"sound_attr\": \"安静\",\n    \"ambient_sound\": \"远处街道声、挂钟滴答声\",\n    \"shots\": [\n      \n        \"character\": \"老板\",\n        \"character_costume\": \"参考图已定\",\n        \"action_type\": \"小孩的手从柜台拿下来\",\n        \"motion_speed\": \"慢\",\n        \"emotion\": \"温柔、坚定\",\n        \"shot_scale\": \"中景\",\n        \"camera_angle\": \"背面越肩\",\n        \"shot_move\": \"固定\",\n        \"shot_depth\": \"正常景深\",\n        \"shot_pace\": \"慢\",\n        \"shot_duration\": \"3s\",\n        \"content\": \"镜头起势精准锁定图1构图。摄影机置于老板背后，越过老板的肩膀拍摄。老板灰色毛衣的背影占据画面左侧，透过他的肩膀，清晰看到柜台对面的小孩正面，小孩的手从柜台拿下来，把手放在柜台下面，神情有点不好意思\",\n        \"vfx\": \"无\",\n        \"dialogue\": \"无\",\n        \"sound_effect\": \"\",\n        \"foley_sound\": \"\"\n      ,\n      \n        \"character\": \"老板\",\n        \"character_costume\": \"参考图已定\",\n        \"action_type\": \"无\",\n        \"motion_speed\": \"慢\",\n        \"emotion\": \"温柔、慈祥\",\n        \"shot_scale\": \"中景\",\n        \"camera_angle\": \"背面越肩\",\n        \"shot_move\": \"固定\",\n        \"shot_depth\": \"正常景深\",\n        \"shot_pace\": \"慢\",\n        \"shot_duration\": \"8s\",\n        \"content\": \"画面和镜头角度保持不变，老板灰色毛衣的背影占据画面左侧，透过他的肩膀，清晰看到柜台对面的小男孩正面\",\n        \"vfx\": \"无\",\n        \"dialogue\": \"你告诉奶奶，就说楼下卖烟的老头说，祝她生日快乐。\",\n        \"sound_effect\": \"无\",\n        \"foley_sound\": \"手指摩擦布料声、呼吸声\"\n      \n    ]\n  ,\n  \"parameters\": \n    \"resolution\": \"1920X1280\",\n    \"fps\": 24,\n    \"duration\": 11,\n    \"cfg_scale\": 7,\n    \"motion_bucket\": 85,\n    \"enhance_prompt\": true,\n    \"audio_generation\": true\n  \n",
+      "clip": [
+        "53",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "78": {
+    "inputs": {
+      "text": "singing, subtitles, blurry, out of focus, overexposed, underexposed, low contrast, washed out colors, excessive noise, grainy texture, poor lighting, flickering, motion blur, distorted proportions, unnatural skin tones, deformed facial features, asymmetrical face, missing facial features, extra limbs, disfigured hands, wrong hand count, artifacts around text, unreadable text on shirt or hat, incorrect lettering on cap (“PNTR”), missing microphone, misplaced microphone, inconsistent perspective, camera shake, incorrect depth of field, background too sharp, background clutter, distracting reflections, harsh shadows, inconsistent lighting direction, color banding, cartoonish rendering, 3D CGI look, unrealistic materials, uncanny valley effect, incorrect ethnicity, wrong gender, exaggerated expressions, smiling, laughing, exaggerated sadness, wrong gaze direction, eyes looking at camera, mismatched lip sync, silent or muted audio, distorted voice, robotic voice, echo, background noise, off-sync audio, missing sniff sounds, incorrect dialogue, added dialogue, repetitive speech, jittery movement, awkward pauses, incorrect timing,inconsistent framing, tilted camera, missing door or shelves, missing shallow depth of field, flat lighting, inconsistent tone, cinematic oversaturation, stylized filters, or AI artifacts.",
+      "clip": [
+        "53",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "79": {
+    "inputs": {
+      "frame_rate": [
+        "132",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "LTX2-pre",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "93",
+        0
+      ],
+      "audio": [
+        "65",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "93": {
+    "inputs": {
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 64,
+      "samples": [
+        "145",
+        2
+      ],
+      "vae": [
+        "56",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE解码（分块）"
+    }
+  },
+  "98": {
+    "inputs": {
+      "width": [
+        "120",
+        1
+      ],
+      "height": [
+        "120",
+        2
+      ],
+      "length": [
+        "133",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {
+      "title": "空Latent视频（LTXV）"
+    }
+  },
+  "100": {
+    "inputs": {
+      "frames_number": [
+        "133",
+        0
+      ],
+      "frame_rate": [
+        "144",
+        0
+      ],
+      "batch_size": 1,
+      "audio_vae": [
+        "60",
+        0
+      ]
+    },
+    "class_type": "LTXVEmptyLatentAudio",
+    "_meta": {
+      "title": "LTXV 空音频潜空间"
+    }
+  },
+  "120": {
+    "inputs": {
+      "width": [
+        "150",
+        0
+      ],
+      "height": [
+        "150",
+        1
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "crop",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "236",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "132": {
+    "inputs": {
+      "value": 24
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "fps"
+    }
+  },
+  "133": {
+    "inputs": {
+      "value": "a * b + 1",
+      "a": [
+        "136",
+        0
+      ],
+      "b": [
+        "132",
+        0
+      ]
+    },
+    "class_type": "SimpleMath+",
+    "_meta": {
+      "title": "🔧 Simple Math"
+    }
+  },
+  "136": {
+    "inputs": {
+      "value": 11
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "INT Constant"
+    }
+  },
+  "138": {
+    "inputs": {
+      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375,0.881203,0.863321,0.841251,0.820089,0.655, 0.381875, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "自定义Sigmas"
+    }
+  },
+  "144": {
+    "inputs": {
+      "_float": [
+        "132",
+        0
+      ]
+    },
+    "class_type": "CR Float To Integer",
+    "_meta": {
+      "title": "🔧 CR Float To Integer"
+    }
+  },
+  "145": {
+    "inputs": {
+      "positive": [
+        "217",
+        0
+      ],
+      "negative": [
+        "217",
+        1
+      ],
+      "latent": [
+        "64",
+        0
+      ]
+    },
+    "class_type": "LTXVCropGuides",
+    "_meta": {
+      "title": "LTXV裁剪指导"
+    }
+  },
+  "147": {
+    "inputs": {
+      "video_latent": [
+        "217",
+        2
+      ],
+      "audio_latent": [
+        "100",
+        0
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "150": {
+    "inputs": {
+      "use_custom_resolution": true,
+      "resolution": "1920x1080 (16:9) (横屏)",
+      "custom_width": 1024,
+      "custom_height": 600
+    },
+    "class_type": "TTResolutionSelector",
+    "_meta": {
+      "title": "TT分辨率选择器"
+    }
+  },
+  "151": {
+    "inputs": {
+      "unet_name": "ltx-2.3-22b-distilled_transformer_only_fp8_input_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "190": {
+    "inputs": {
+      "anything": [
+        "93",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "217": {
+    "inputs": {
+      "num_guides": "2",
+      "num_guides.frame_idx_1": 0,
+      "num_guides.strength_1": 0.7,
+      "num_guides.frame_idx_2": 264,
+      "num_guides.strength_2": 0.7,
+      "positive": [
+        "15",
+        0
+      ],
+      "negative": [
+        "15",
+        1
+      ],
+      "vae": [
+        "56",
+        0
+      ],
+      "latent": [
+        "98",
+        0
+      ],
+      "num_guides.image_1": [
+        "120",
+        0
+      ],
+      "num_guides.image_2": [
+        "233",
+        0
+      ]
+    },
+    "class_type": "LTXVAddGuideMulti",
+    "_meta": {
+      "title": "LTXVAddGuideMulti"
+    }
+  },
+  "232": {
+    "inputs": {
+      "image": "Flux2_00030_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "233": {
+    "inputs": {
+      "width": [
+        "150",
+        0
+      ],
+      "height": [
+        "150",
+        1
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "crop",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "232",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "236": {
+    "inputs": {
+      "image": "Flux2_00030_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  }
+}

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,13 +31,13 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
       });
-      const data = await res.json();
+      const data = await res.json() as { success: boolean; code?: string };
       if (data.success) {
         setCodeSent(true);
         setCountdown(60);
         // 开发模式下显示验证码
         if (data.code) {
-          alert(`验证码: ${data.code}`);
+          console.log(`[DEV] 验证码: ${data.code}`);
         }
       } else {
         setError('发送失败');
@@ -70,7 +70,7 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, code }),
       });
-      const data = await res.json();
+      const data = await res.json() as { accessToken?: string; user?: any; message?: string };
       if (data.accessToken) {
         localStorage.setItem('accessToken', data.accessToken);
         localStorage.setItem('user', JSON.stringify(data.user));
@@ -86,18 +86,25 @@ export default function LoginPage() {
   };
 
   const handleWechatLogin = async () => {
-    // Mock WeChat login for dev
+    // Mock WeChat login for dev - call real API to get JWT token
     setLoading(true);
     try {
-      const mockUser = {
-        id: 'wechat_user_1',
-        unionId: 'wechat_mock',
-        nickname: '微信用户',
-      };
-      const mockToken = 'mock_token_' + Date.now();
-      localStorage.setItem('accessToken', mockToken);
-      localStorage.setItem('user', JSON.stringify(mockUser));
+      const res = await fetch(`${API_URL}/api/auth/wechat/callback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'mock_wechat_dev' }),
+      });
+
+      if (!res.ok) {
+        throw new Error('微信登录失败');
+      }
+
+      const data = await res.json() as { accessToken: string; user: any };
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('user', JSON.stringify(data.user));
       router.push('/home');
+    } catch (err: any) {
+      setError(err.message || '微信登录失败');
     } finally {
       setLoading(false);
     }

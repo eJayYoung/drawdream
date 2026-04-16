@@ -1,0 +1,203 @@
+{
+  "116": {
+    "inputs": {
+      "filename_prefix": "comfyui-airport-editorial",
+      "images": [
+        "122",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "117": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "118": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "119": {
+    "inputs": {
+      "seed": 386389556562250,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "117",
+        0
+      ],
+      "positive": [
+        "120",
+        0
+      ],
+      "negative": [
+        "121",
+        0
+      ],
+      "latent_image": [
+        "124",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "120": {
+    "inputs": {
+      "text": [
+        "126",
+        0
+      ],
+      "clip": [
+        "118",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "121": {
+    "inputs": {
+      "text": "低质量, 模糊, 噪点, JPEG伪影, 压缩失真, 多余的手指, 扭曲的手, 畸形手, 不对称眼睛, 错位牙齿, 卡通风格, 动漫滤镜, 过度上色, 扁平化设计, 残缺身体, 切割画面, 杂乱背景, 错误透视, 丑陋, 恐怖, 死亡眼神, 异常肤色, 表情僵硬, 文字, 水印, 签名, 用户名,出现人类",
+      "clip": [
+        "118",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "122": {
+    "inputs": {
+      "samples": [
+        "119",
+        0
+      ],
+      "vae": [
+        "123",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "123": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "124": {
+    "inputs": {
+      "width": [
+        "125",
+        0
+      ],
+      "height": [
+        "125",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
+    }
+  },
+  "125": {
+    "inputs": {
+      "use_custom_resolution": false,
+      "resolution": "832x1216 (13:19) (竖屏)",
+      "custom_width": 1024,
+      "custom_height": 1024
+    },
+    "class_type": "TTResolutionSelector",
+    "_meta": {
+      "title": "TT分辨率选择器"
+    }
+  },
+  "126": {
+    "inputs": {
+      "model_name": "Qwen3-VL-8B-Instruct",
+      "quantization": "None (FP16)",
+      "attention_mode": "auto",
+      "preset_prompt": "🖼️ Detailed Description",
+      "custom_prompt": [
+        "128",
+        0
+      ],
+      "max_tokens": 512,
+      "keep_model_loaded": true,
+      "seed": 280734850
+    },
+    "class_type": "AILab_QwenVL",
+    "_meta": {
+      "title": "QwenVL"
+    }
+  },
+  "127": {
+    "inputs": {
+      "value": "唐代富贵家庭的书房，书房室内场景，傍晚，有晚霞从窗外照进来,不要出现人，景别：中，能看到大部分书房场景"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "提示词"
+    }
+  },
+  "128": {
+    "inputs": {
+      "string_a": [
+        "127",
+        0
+      ],
+      "string_b": [
+        "129",
+        0
+      ],
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "129": {
+    "inputs": {
+      "text": "这是一个专门生成场景资产的工作流，你是一个专业的电影导演，需要将用户输入的提示词，用专业的角度重述一遍，完善更多场景里的细节，如光照、色调，镜头，景别，材质等，记住，这是纯场景，不要出现人类。且要用符合z-image-turbo模型能理解的文字输出"
+    },
+    "class_type": "CR Text",
+    "_meta": {
+      "title": "🔤 CR Text"
+    }
+  }
+}

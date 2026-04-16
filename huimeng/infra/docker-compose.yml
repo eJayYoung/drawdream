@@ -72,8 +72,8 @@ services:
   # API Service (NestJS)
   api:
     build:
-      context: ../services/api
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/api/Dockerfile
     container_name: huimeng-api
     environment:
       NODE_ENV: production
@@ -95,7 +95,7 @@ services:
       COMFYUI_PORT: 8188
       CORS_ORIGIN: http://localhost
     ports:
-      - "3001:3001"
+      - "8778:3001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,15 +108,15 @@ services:
   # Web (Next.js)
   web:
     build:
-      context: ../apps/web
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/web/Dockerfile
     container_name: huimeng-web
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:3001
-      NEXT_PUBLIC_WS_URL: ws://localhost:3001
+      NEXT_PUBLIC_API_URL: http://localhost:8778
+      NEXT_PUBLIC_WS_URL: ws://localhost:8778
     ports:
-      - "3000:3000"
+      - "8777:3000"
     restart: unless-stopped
 
   # ComfyUI Service
@@ -126,7 +126,7 @@ services:
       dockerfile: Dockerfile
     container_name: huimeng-comfyui
     ports:
-      - "8188:8188"
+      - "3000-3007:8188"
     volumes:
       - comfyui_models:/app/models
       - comfyui_output:/app/output

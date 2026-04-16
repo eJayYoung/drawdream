@@ -5,6 +5,9 @@
     "outDir": "./dist",
     "module": "CommonJS",
     "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "downlevelIteration": true,
     "paths": {
       "@/*": ["./src/*"]
     },

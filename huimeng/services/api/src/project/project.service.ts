@@ -18,7 +18,17 @@ export class ProjectService {
     if (!project) {
       throw new Error('项目不存在');
     }
-    return project;
+    const episodes = Array.from(this.episodes.values())
+      .filter((e) => e.projectId === id)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+    const characters = Array.from(this.characters.values())
+      .filter((c) => c.projectId === id);
+
+    return {
+      ...project,
+      episodes,
+      characters,
+    };
   }
 
   async create(userId: string, dto: any): Promise<any> {
@@ -27,11 +37,19 @@ export class ProjectService {
       userId,
       name: dto.name,
       description: dto.description,
-      aspectRatio: dto.aspectRatio,
-      style: dto.style,
-      imageModel: dto.imageModel,
-      videoModel: dto.videoModel,
+      aspectRatio: dto.aspectRatio || '16:9',
+      style: dto.style || 'modern',
+      imageModel: dto.imageModel || 'sdxl',
+      videoModel: dto.videoModel || 'svd',
       status: 'draft',
+      // 创作内容存储
+      scriptContent: null,
+      episodesData: [],
+      charactersData: [],
+      storyboardsData: [],
+      imagesData: [],
+      videoUrl: null,
+      coverImageUrl: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -42,6 +60,100 @@ export class ProjectService {
   async update(id: string, dto: any): Promise<any> {
     const project = await this.findById(id);
     Object.assign(project, dto, { updatedAt: new Date() });
+    return project;
+  }
+
+  // 保存剧本内容
+  async saveScript(id: string, scriptContent: any): Promise<any> {
+    const project = this.projects.get(id);
+    if (!project) throw new Error('项目不存在');
+    project.scriptContent = scriptContent;
+    project.updatedAt = new Date();
+    return project;
+  }
+
+  // 保存分集内容
+  async saveEpisodes(id: string, episodesData: any[]): Promise<any> {
+    const project = this.projects.get(id);
+    if (!project) throw new Error('项目不存在');
+    project.episodesData = episodesData;
+    project.updatedAt = new Date();
+
+    for (let i = 0; i < episodesData.length; i++) {
+      const epData = episodesData[i];
+      const episode = {
+        id: uuidv4(),
+        projectId: id,
+        episodeNumber: epData.episodeNumber || i + 1,
+        title: epData.title,
+        summary: epData.summary,
+        scriptContent: typeof epData === 'string' ? epData : JSON.stringify(epData),
+        estimatedDuration: epData.estimatedDuration || 180,
+        status: 'completed',
+        orderIndex: i,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.episodes.set(episode.id, episode);
+    }
+
+    return project;
+  }
+
+  // 保存角色内容
+  async saveCharacters(id: string, charactersData: any[]): Promise<any> {
+    const project = this.projects.get(id);
+    if (!project) throw new Error('项目不存在');
+    project.charactersData = charactersData;
+    project.updatedAt = new Date();
+
+    for (const charData of charactersData) {
+      const character = {
+        id: uuidv4(),
+        projectId: id,
+        name: charData.name,
+        gender: charData.gender,
+        ageGroup: charData.ageGroup,
+        role: charData.role,
+        personality: charData.personality,
+        appearance: charData.appearance,
+        voiceType: charData.voiceType,
+        imageUrls: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.characters.set(character.id, character);
+    }
+
+    return project;
+  }
+
+  // 保存分镜内容
+  async saveStoryboards(id: string, storyboardsData: any[]): Promise<any> {
+    const project = this.projects.get(id);
+    if (!project) throw new Error('项目不存在');
+    project.storyboardsData = storyboardsData;
+    project.updatedAt = new Date();
+    return project;
+  }
+
+  // 保存分镜图
+  async saveImages(id: string, imagesData: any[]): Promise<any> {
+    const project = this.projects.get(id);
+    if (!project) throw new Error('项目不存在');
+    project.imagesData = imagesData;
+    project.updatedAt = new Date();
+    return project;
+  }
+
+  // 保存成片
+  async saveVideo(id: string, videoUrl: string, coverImageUrl?: string): Promise<any> {
+    const project = this.projects.get(id);
+    if (!project) throw new Error('项目不存在');
+    project.videoUrl = videoUrl;
+    if (coverImageUrl) project.coverImageUrl = coverImageUrl;
+    project.status = 'completed';
+    project.updatedAt = new Date();
     return project;
   }
 

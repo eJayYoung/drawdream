@@ -25,7 +25,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // 剧本展示组件
 function ScriptDisplay({ data }: { data: any }) {
@@ -208,6 +208,10 @@ export default function ProjectCreatePage({
   const [loadingProject, setLoadingProject] = useState(true);
   const [pausedStepId, setPausedStepId] = useState<string | null>(null);
   const [episodesResult, setEpisodesResult] = useState<any[]>([]);
+  const [charactersResult, setCharactersResult] = useState<any[]>([]);
+  const [storyboardsResult, setStoryboardsResult] = useState<any[]>([]);
+  const [imagesResult, setImagesResult] = useState<any[]>([]);
+  const [videosResult, setVideosResult] = useState<any[]>([]);
 
   const getToken = () => {
     if (typeof window === 'undefined') return null;
@@ -236,6 +240,45 @@ export default function ProjectCreatePage({
 
         const data = await res.json();
         setProject(data);
+
+        // 回填已保存的内容
+        if (data.scriptContent) {
+          setScriptResult({ content: data.scriptContent });
+          setSteps((prev) =>
+            prev.map((s) => (s.id === 'script' ? { ...s, status: 'completed' } : s))
+          );
+        }
+        if (data.episodesData && data.episodesData.length > 0) {
+          setEpisodesResult(data.episodesData);
+          setSteps((prev) =>
+            prev.map((s) => (s.id === 'episodes' ? { ...s, status: 'completed' } : s))
+          );
+        }
+        if (data.charactersData && data.charactersData.length > 0) {
+          setCharactersResult(data.charactersData);
+          setSteps((prev) =>
+            prev.map((s) => (s.id === 'characters' ? { ...s, status: 'completed' } : s))
+          );
+        }
+        if (data.storyboardsData && data.storyboardsData.length > 0) {
+          setStoryboardsResult(data.storyboardsData);
+          setSteps((prev) =>
+            prev.map((s) => (s.id === 'storyboard' ? { ...s, status: 'completed' } : s))
+          );
+        }
+        if (data.imagesData && data.imagesData.length > 0) {
+          setImagesResult(data.imagesData);
+          setSteps((prev) =>
+            prev.map((s) => (s.id === 'images' ? { ...s, status: 'completed' } : s))
+          );
+        }
+        if (data.videoUrl) {
+          setVideosResult([{ videoUrl: data.videoUrl, title: '成片' }]);
+          setSteps((prev) =>
+            prev.map((s) => (s.id === 'video' ? { ...s, status: 'completed' } : s))
+          );
+        }
+
         setLoadingProject(false);
       } catch (err: any) {
         console.error('Failed to fetch project:', err);
@@ -309,7 +352,7 @@ export default function ProjectCreatePage({
         const data = await res.json();
         setScriptResult(data);
       } else if (stepId === 'episodes') {
-        // 智能分集：从剧本结果中解析分集
+        // 智能分集：调用后端 API
         if (!scriptResult?.content) {
           setError('请先生成剧本');
           setSteps((prev) =>
@@ -318,26 +361,109 @@ export default function ProjectCreatePage({
           return;
         }
 
-        // 从剧本内容中解析 episodes
-        try {
-          const scriptData = typeof scriptResult.content === 'string'
-            ? JSON.parse(scriptResult.content)
-            : scriptResult.content;
-          const episodes = scriptData.episodes || [];
-          setEpisodesResult(episodes);
-        } catch (e) {
-          setError('解析分集失败');
+        // 调用后端智能分集 API
+        const res = await fetch(`${API_URL}/api/workflow/projects/${params.id}/episodes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            scriptContent: typeof scriptResult.content === 'string'
+              ? scriptResult.content
+              : JSON.stringify(scriptResult.content),
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error('分集失败');
+        }
+
+        const episodes: any[] = await res.json();
+        setEpisodesResult(episodes);
+      } else if (stepId === 'characters') {
+        // 角色与配音：调用LLM生成角色
+        if (!scriptResult?.content) {
+          setError('请先生成剧本');
           setSteps((prev) =>
-            prev.map((s) => (s.id === stepId ? { ...s, status: 'failed' } : s))
+            prev.map((s) => (s.id === stepId ? { ...s, status: 'pending' } : s))
           );
           return;
         }
+
+        const res = await fetch(`${API_URL}/api/workflow/projects/${params.id}/characters`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            scriptContent: typeof scriptResult.content === 'string'
+              ? scriptResult.content
+              : JSON.stringify(scriptResult.content),
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error('角色生成失败');
+        }
+
+        const characters: any[] = await res.json();
+        setCharactersResult(characters);
+      } else if (stepId === 'storyboard') {
+        // 智能分镜：调用后端 API 为每个 episode 生成分镜
+        if (episodesResult.length === 0) {
+          setError('请先生成剧本和分集');
+          setSteps((prev) =>
+            prev.map((s) => (s.id === stepId ? { ...s, status: 'pending' } : s))
+          );
+          return;
+        }
+
+        const allStoryboards: any[] = [];
+        // 为每个 episode 生成分镜
+        for (const episode of episodesResult) {
+          if (!episode.id) continue;
+
+          const res = await fetch(`${API_URL}/api/workflow/episodes/${episode.id}/storyboards`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({}),
+          });
+
+          if (!res.ok) {
+            throw new Error('分镜生成失败');
+          }
+
+          const storyboards: any[] = await res.json();
+          allStoryboards.push(...storyboards);
+        }
+        setStoryboardsResult(allStoryboards);
+      } else if (stepId === 'images') {
+        // 分镜图：暂时跳过，等待后续ComfyUI集成
+        // 生成占位图片数据
+        const mockImages = storyboardsResult.map((sb: any, i: number) => ({
+          id: sb.id,
+          sceneNumber: sb.sceneNumber,
+          imageUrl: null,
+          status: 'pending',
+        }));
+        setImagesResult(mockImages);
+      } else if (stepId === 'video') {
+        // 成片：暂时跳过，等待后续ComfyUI集成
+        setVideosResult([]);
       }
 
       // Mark as completed
       setSteps((prev) =>
         prev.map((s) => (s.id === stepId ? { ...s, status: 'completed' } : s))
       );
+
+      // 保存到后端
+      await saveProjectProgress(stepId);
 
       // Move to next enabled step
       const nextEnabled = steps.findIndex(
@@ -351,6 +477,72 @@ export default function ProjectCreatePage({
         prev.map((s) => (s.id === stepId ? { ...s, status: 'failed' } : s))
       );
       setError(err.message || '生成失败');
+    }
+  };
+
+  // 保存项目进度到后端
+  const saveProjectProgress = async (completedStepId: string) => {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+      if (completedStepId === 'script' && scriptResult?.content) {
+        await fetch(`${API_URL}/api/projects/${params.id}/script`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ scriptContent: scriptResult.content }),
+        });
+      } else if (completedStepId === 'episodes' && episodesResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/episodes-data`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ episodesData: episodesResult }),
+        });
+      } else if (completedStepId === 'characters' && charactersResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/characters-data`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ charactersData: charactersResult }),
+        });
+      } else if (completedStepId === 'storyboard' && storyboardsResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/storyboards`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ storyboardsData: storyboardsResult }),
+        });
+      } else if (completedStepId === 'images' && imagesResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/images`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ imagesData: imagesResult }),
+        });
+      } else if (completedStepId === 'video' && videosResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/video`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ videoUrl: videosResult[0]?.videoUrl || '' }),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to save project progress:', err);
     }
   };
 
@@ -399,7 +591,7 @@ export default function ProjectCreatePage({
         const data = await res.json();
         setScriptResult(data);
       } else if (stepId === 'episodes') {
-        // 智能分集：从剧本结果中解析分集
+        // 智能分集：调用后端 API
         if (!scriptResult?.content) {
           setError('请先生成剧本');
           setSteps((prev) =>
@@ -408,26 +600,109 @@ export default function ProjectCreatePage({
           return;
         }
 
-        // 从剧本内容中解析 episodes
-        try {
-          const scriptData = typeof scriptResult.content === 'string'
-            ? JSON.parse(scriptResult.content)
-            : scriptResult.content;
-          const episodes = scriptData.episodes || [];
-          setEpisodesResult(episodes);
-        } catch (e) {
-          setError('解析分集失败');
+        // 调用后端智能分集 API
+        const res = await fetch(`${API_URL}/api/workflow/projects/${params.id}/episodes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            scriptContent: typeof scriptResult.content === 'string'
+              ? scriptResult.content
+              : JSON.stringify(scriptResult.content),
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error('分集失败');
+        }
+
+        const episodes: any[] = await res.json();
+        setEpisodesResult(episodes);
+      } else if (stepId === 'characters') {
+        // 角色与配音：调用LLM生成角色
+        if (!scriptResult?.content) {
+          setError('请先生成剧本');
           setSteps((prev) =>
-            prev.map((s) => (s.id === stepId ? { ...s, status: 'failed' } : s))
+            prev.map((s) => (s.id === stepId ? { ...s, status: 'pending' } : s))
           );
           return;
         }
+
+        const res = await fetch(`${API_URL}/api/workflow/projects/${params.id}/characters`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            scriptContent: typeof scriptResult.content === 'string'
+              ? scriptResult.content
+              : JSON.stringify(scriptResult.content),
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error('角色生成失败');
+        }
+
+        const characters: any[] = await res.json();
+        setCharactersResult(characters);
+      } else if (stepId === 'storyboard') {
+        // 智能分镜：调用后端 API 为每个 episode 生成分镜
+        if (episodesResult.length === 0) {
+          setError('请先生成剧本和分集');
+          setSteps((prev) =>
+            prev.map((s) => (s.id === stepId ? { ...s, status: 'pending' } : s))
+          );
+          return;
+        }
+
+        const allStoryboards: any[] = [];
+        // 为每个 episode 生成分镜
+        for (const episode of episodesResult) {
+          if (!episode.id) continue;
+
+          const res = await fetch(`${API_URL}/api/workflow/episodes/${episode.id}/storyboards`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({}),
+          });
+
+          if (!res.ok) {
+            throw new Error('分镜生成失败');
+          }
+
+          const storyboards: any[] = await res.json();
+          allStoryboards.push(...storyboards);
+        }
+        setStoryboardsResult(allStoryboards);
+      } else if (stepId === 'images') {
+        // 分镜图：暂时跳过，等待后续ComfyUI集成
+        // 生成占位图片数据
+        const mockImages = storyboardsResult.map((sb: any, i: number) => ({
+          id: sb.id,
+          sceneNumber: sb.sceneNumber,
+          imageUrl: null,
+          status: 'pending',
+        }));
+        setImagesResult(mockImages);
+      } else if (stepId === 'video') {
+        // 成片：暂时跳过，等待后续ComfyUI集成
+        setVideosResult([]);
       }
 
       // Mark as completed
       setSteps((prev) =>
         prev.map((s) => (s.id === stepId ? { ...s, status: 'completed' } : s))
       );
+
+      // 保存到后端
+      await saveProjectProgress(stepId);
 
       // Move to next enabled step
       const nextEnabled = steps.findIndex(
@@ -449,6 +724,70 @@ export default function ProjectCreatePage({
       if (steps[i].enabled) {
         await runStep(steps[i].id);
       }
+    }
+  };
+
+  // 保存所有项目数据到后端
+  const saveAll = async () => {
+    const token = getToken();
+    if (!token) {
+      alert('请先登录');
+      return;
+    }
+
+    try {
+      // 保存剧本
+      if (scriptResult?.content) {
+        await fetch(`${API_URL}/api/projects/${params.id}/script`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ scriptContent: scriptResult.content }),
+        });
+      }
+
+      // 保存分集
+      if (episodesResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/episodes-data`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ episodesData: episodesResult }),
+        });
+      }
+
+      // 保存角色
+      if (charactersResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/characters-data`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ charactersData: charactersResult }),
+        });
+      }
+
+      // 保存分镜
+      if (storyboardsResult.length > 0) {
+        await fetch(`${API_URL}/api/projects/${params.id}/storyboards`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ storyboardsData: storyboardsResult }),
+        });
+      }
+
+      alert('保存成功');
+    } catch (err) {
+      console.error('保存失败:', err);
+      alert('保存失败');
     }
   };
 
@@ -486,7 +825,10 @@ export default function ProjectCreatePage({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="px-4 py-2 border rounded-lg hover:bg-accent flex items-center gap-2">
+          <button
+            onClick={saveAll}
+            className="px-4 py-2 border rounded-lg hover:bg-accent flex items-center gap-2"
+          >
             <Save size={18} />
             保存
           </button>
@@ -825,66 +1167,238 @@ export default function ProjectCreatePage({
 
             {currentStepData.id === 'characters' && (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">已创建角色 (3)</span>
-                  <button className="px-4 py-2 border rounded-lg hover:bg-accent text-sm">
-                    + 添加角色
-                  </button>
-                </div>
-                <div className="grid md:grid-cols-3 gap-4">
-                  {[
-                    { name: '陈宇', role: '宇航员', avatar: '👨‍🚀' },
-                    { name: '李白', role: '诗人', avatar: '👨‍🎨' },
-                    { name: '小翠', role: '宫女', avatar: '👩' },
-                  ].map((char) => (
-                    <div
-                      key={char.name}
-                      className="border rounded-lg p-4 hover:shadow-md transition-shadow"
-                    >
-                      <div className="aspect-square bg-muted rounded-lg mb-3 flex items-center justify-center text-4xl">
-                        {char.avatar}
-                      </div>
-                      <h4 className="font-medium">{char.name}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {char.role}
-                      </p>
-                      <button className="mt-3 w-full py-2 border rounded-lg hover:bg-accent text-sm flex items-center justify-center gap-2">
-                        <Volume2 size={14} />
-                        配音
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+                    <AlertCircle size={16} />
+                    {error}
+                  </div>
+                )}
+
+                {currentStepData.status === 'generating' && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={24} className="animate-spin text-primary" />
+                      <span className="text-muted-foreground">正在调用AI生成角色...</span>
+                    </div>
+                  </div>
+                )}
+
+                {(currentStepData.status === 'completed' || charactersResult.length > 0) && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">已创建角色 ({charactersResult.length})</span>
+                      <button className="px-4 py-2 border rounded-lg hover:bg-accent text-sm">
+                        + 添加角色
                       </button>
                     </div>
-                  ))}
-                </div>
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {charactersResult.map((char: any, index: number) => (
+                        <div
+                          key={index}
+                          className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                        >
+                          <div className="aspect-square bg-muted rounded-lg mb-3 flex items-center justify-center text-4xl">
+                            {char.gender === '女' ? '👩' : '👨'}
+                          </div>
+                          <h4 className="font-medium">{char.name}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            {char.role || char.personality}
+                          </p>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            <span className="mr-2">{char.gender}</span>
+                            <span>{char.ageGroup}</span>
+                          </div>
+                          <button className="mt-3 w-full py-2 border rounded-lg hover:bg-accent text-sm flex items-center justify-center gap-2">
+                            <Volume2 size={14} />
+                            {char.voiceType || '选择配音'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {!charactersResult.length && currentStepData.status !== 'generating' && (
+                  <div className="flex items-center justify-center text-muted-foreground py-8">
+                    <div className="text-center">
+                      <Users size={48} className="mx-auto mb-4 opacity-50" />
+                      <p>点击"立即生成"开始创建角色</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {currentStepData.id === 'storyboard' && (
+              <div className="space-y-4">
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+                    <AlertCircle size={16} />
+                    {error}
+                  </div>
+                )}
+
+                {currentStepData.status === 'generating' && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={24} className="animate-spin text-primary" />
+                      <span className="text-muted-foreground">正在生成智能分镜...</span>
+                    </div>
+                  </div>
+                )}
+
+                {(currentStepData.status === 'completed' || storyboardsResult.length > 0) && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">分镜列表 ({storyboardsResult.length})</span>
+                    </div>
+                    <div className="space-y-3">
+                      {storyboardsResult.map((sb: any, i: number) => (
+                        <div key={i} className="border rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-medium flex items-center justify-center">
+                                {i + 1}
+                              </span>
+                              <span className="text-sm font-medium">{sb.shotType || '中景'}</span>
+                            </div>
+                          </div>
+                          {sb.description && (
+                            <p className="text-sm text-muted-foreground mb-2">{sb.description}</p>
+                          )}
+                          {sb.imagePrompt && (
+                            <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                              {sb.imagePrompt}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {!storyboardsResult.length && currentStepData.status !== 'generating' && (
+                  <div className="flex items-center justify-center text-muted-foreground py-8">
+                    <div className="text-center">
+                      <Clapperboard size={48} className="mx-auto mb-4 opacity-50" />
+                      <p>点击"立即生成"开始智能分镜</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {currentStepData.id === 'images' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">分镜图 (8)</span>
-                  <div className="flex items-center gap-2">
-                    <button className="px-3 py-1.5 border rounded-lg hover:bg-accent text-sm">
-                      上传参考图
-                    </button>
-                    <button className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm">
-                      全部生成
-                    </button>
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+                    <AlertCircle size={16} />
+                    {error}
                   </div>
-                </div>
-                <div className="grid grid-cols-4 gap-4">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="aspect-video bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm"
-                    >
-                      分镜 {i + 1}
+                )}
+
+                {currentStepData.status === 'generating' && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={24} className="animate-spin text-primary" />
+                      <span className="text-muted-foreground">正在生成分镜图...</span>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {(currentStepData.status === 'completed' || imagesResult.length > 0) && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">分镜图 ({imagesResult.length})</span>
+                      <div className="flex items-center gap-2">
+                        <button className="px-3 py-1.5 border rounded-lg hover:bg-accent text-sm">
+                          上传参考图
+                        </button>
+                        <button className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm">
+                          重新生成
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4">
+                      {imagesResult.map((img: any, i: number) => (
+                        <div
+                          key={i}
+                          className="aspect-video bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm overflow-hidden"
+                        >
+                          {img.imageUrl ? (
+                            <img src={img.imageUrl} alt={`分镜 ${i + 1}`} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>分镜 {i + 1}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {!imagesResult.length && currentStepData.status !== 'generating' && (
+                  <div className="flex items-center justify-center text-muted-foreground py-8">
+                    <div className="text-center">
+                      <Image size={48} className="mx-auto mb-4 opacity-50" />
+                      <p>点击"立即生成"开始生成分镜图</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {!['script', 'characters', 'images'].includes(currentStepData.id) && (
+            {currentStepData.id === 'video' && (
+              <div className="space-y-4">
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+                    <AlertCircle size={16} />
+                    {error}
+                  </div>
+                )}
+
+                {currentStepData.status === 'generating' && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={24} className="animate-spin text-primary" />
+                      <span className="text-muted-foreground">正在生成视频...</span>
+                    </div>
+                  </div>
+                )}
+
+                {(currentStepData.status === 'completed' || videosResult.length > 0) && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">成片 ({videosResult.length})</span>
+                    </div>
+                    <div className="space-y-4">
+                      {videosResult.map((video: any, i: number) => (
+                        <div key={i} className="border rounded-lg p-4">
+                          <div className="aspect-video bg-black rounded-lg mb-3 flex items-center justify-center">
+                            {video.videoUrl ? (
+                              <video src={video.videoUrl} controls className="w-full h-full" />
+                            ) : (
+                              <span className="text-white">视频 {i + 1}</span>
+                            )}
+                          </div>
+                          <h4 className="font-medium">{video.title || `片段 ${i + 1}`}</h4>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {!videosResult.length && currentStepData.status !== 'generating' && (
+                  <div className="flex items-center justify-center text-muted-foreground py-8">
+                    <div className="text-center">
+                      <Film size={48} className="mx-auto mb-4 opacity-50" />
+                      <p>点击"立即生成"开始合成成片</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!['script', 'characters', 'images', 'video', 'episodes'].includes(currentStepData.id) && (
               <div className="h-full flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
                   <StepIcon size={48} className="mx-auto mb-4 opacity-50" />

@@ -1,21 +1,36 @@
 FROM node:20-alpine AS base
 
-# Install dependencies only when needed
+# Install dependencies
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat git python3 make g++
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml* ./
-RUN npm install -g pnpm@8 && \
-    pnpm install --frozen-lockfile
+# Copy root config
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 
-# Rebuild the source code only when needed
+# Copy source code
+COPY packages/shared-types ./packages/shared-types
+COPY apps/web ./apps/web
+
+# Install dependencies (skip optional deps)
+RUN npm install -g pnpm@8 && pnpm install -w
+
+# Build Web
 FROM base AS builder
 WORKDIR /app
+RUN npm install -g pnpm@8
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY --from=deps /app/packages ./packages
+COPY --from=deps /app/apps ./apps
+COPY --from=deps /app/package.json ./package.json
+COPY --from=deps /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=deps /app/turbo.json ./turbo.json
+COPY tsconfig.json ./
 
-RUN pnpm build
+# 禁用 Google Fonts 优化，避免构建时网络问题
+ENV NEXT_DISABLE_GOOGLE_FONTS=1
+
+RUN cd apps/web && npx next build
 
 # Production image
 FROM base AS runner
@@ -26,9 +41,9 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/apps/web/public ./public
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./.next/static
 
 USER nextjs
 

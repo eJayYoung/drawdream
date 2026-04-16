@@ -1,0 +1,31 @@
+#!/bin/bash
+#
+# Git Post-Receive Hook
+# 服务器上代码 push 后自动触发部署
+#
+# 使用方法:
+# 1. 在服务器初始化 git 仓库
+# 2. 把这个脚本放到 hooks/post-receive
+# 3. 给执行权限: chmod +x hooks/post-receive
+#
+
+DEPLOY_DIR="/opt/huimeng"
+DEPLOY_SCRIPT="$DEPLOY_DIR/scripts/deploy.sh"
+
+# 监听分支
+while read oldrev newrev refname; do
+    branch=$(echo "$refname" | sed 's|refs/heads/||')
+
+    # 只处理 main 分支
+    if [ "$branch" = "main" ]; then
+        echo "[Git Hook] Detected push to main branch"
+        echo "[Git Hook] Starting auto-deployment..."
+
+        # 执行部署
+        if [ -f "$DEPLOY_SCRIPT" ]; then
+            $DEPLOY_SCRIPT all
+        else
+            echo "[Git Hook] Deploy script not found: $DEPLOY_SCRIPT"
+        fi
+    fi
+done

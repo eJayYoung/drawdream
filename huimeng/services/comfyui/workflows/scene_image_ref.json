@@ -1,0 +1,298 @@
+{
+  "76": {
+    "inputs": {
+      "filename_prefix": "comfyui-airport-editorial",
+      "images": [
+        "94",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "86": {
+    "inputs": {
+      "unet_name": "qwen_image_edit_2511_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "87": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "91": {
+    "inputs": {
+      "seed": 349450737329082,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.9,
+      "model": [
+        "86",
+        0
+      ],
+      "positive": [
+        "129",
+        0
+      ],
+      "negative": [
+        "93",
+        0
+      ],
+      "latent_image": [
+        "116",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "93": {
+    "inputs": {
+      "text": "低质量, 模糊, 噪点, JPEG伪影, 压缩失真, 多余的手指, 扭曲的手, 畸形手, 不对称眼睛, 错位牙齿, 卡通风格, 动漫滤镜, 过度上色, 扁平化设计, 残缺身体, 切割画面, 杂乱背景, 错误透视, 丑陋, 恐怖, 死亡眼神, 异常肤色, 表情僵硬, 文字, 水印, 签名, 用户名,出现人类",
+      "clip": [
+        "87",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "94": {
+    "inputs": {
+      "samples": [
+        "91",
+        0
+      ],
+      "vae": [
+        "95",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "95": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "100": {
+    "inputs": {
+      "model_name": "Qwen3-VL-8B-Instruct",
+      "quantization": "4-bit (VRAM-friendly)",
+      "attention_mode": "auto",
+      "preset_prompt": "🖼️ Detailed Description",
+      "custom_prompt": [
+        "120",
+        0
+      ],
+      "max_tokens": 512,
+      "keep_model_loaded": true,
+      "seed": 1974594684,
+      "image": [
+        "118",
+        0
+      ]
+    },
+    "class_type": "AILab_QwenVL",
+    "_meta": {
+      "title": "QwenVL"
+    }
+  },
+  "114": {
+    "inputs": {
+      "value": "超真实，现实。参考图1，生成符合县城小卖部的图"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "提示词"
+    }
+  },
+  "116": {
+    "inputs": {
+      "pixels": [
+        "117",
+        0
+      ],
+      "vae": [
+        "95",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "117": {
+    "inputs": {
+      "aspect_ratio": "original",
+      "proportional_width": 1,
+      "proportional_height": 1,
+      "fit": "letterbox",
+      "method": "lanczos",
+      "round_to_multiple": "8",
+      "scale_to_side": "None",
+      "scale_to_length": 1024,
+      "background_color": "#000000",
+      "image": [
+        "124",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "_meta": {
+      "title": "LayerUtility: ImageScaleByAspectRatio V2"
+    }
+  },
+  "118": {
+    "inputs": {
+      "image": "31.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "120": {
+    "inputs": {
+      "string_a": [
+        "114",
+        0
+      ],
+      "string_b": [
+        "121",
+        0
+      ],
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "121": {
+    "inputs": {
+      "text": "#role\n你是细节补充的大师，你要基于用户和参考图所描述的场景，完善细节。让细节更加贴近真实生活。不要改变用户和参考图已经有的。只需要补细节！记住，这是场景工作流，不许出现人类。"
+    },
+    "class_type": "CR Text",
+    "_meta": {
+      "title": "🔤 CR Text"
+    }
+  },
+  "124": {
+    "inputs": {
+      "width": [
+        "125",
+        0
+      ],
+      "height": [
+        "125",
+        1
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "stretch",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "118",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "125": {
+    "inputs": {
+      "use_custom_resolution": false,
+      "resolution": "1920x1080 (16:9) (横屏)",
+      "custom_width": 1024,
+      "custom_height": 1024
+    },
+    "class_type": "TTResolutionSelector",
+    "_meta": {
+      "title": "TT分辨率选择器"
+    }
+  },
+  "126": {
+    "inputs": {
+      "output_file_path": "output",
+      "file_name": "qwenvl_image_txt",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "100",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "保存文本"
+    }
+  },
+  "128": {
+    "inputs": {
+      "prompt": [
+        "100",
+        0
+      ],
+      "clip": [
+        "87",
+        0
+      ],
+      "vae": [
+        "95",
+        0
+      ],
+      "image1": [
+        "118",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "文本编码（QwenImageEditPlus）"
+    }
+  },
+  "129": {
+    "inputs": {
+      "conditioning": [
+        "128",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  }
+}

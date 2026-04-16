@@ -1,21 +1,35 @@
 FROM node:20-alpine AS base
 
-# Install dependencies only when needed
+# Install dependencies
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat git python3 make g++ py3-pip
+RUN pip3 install --break-system-packages setuptools
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml* ./
-RUN npm install -g pnpm@8 && \
-    pnpm install --frozen-lockfile
+# Copy workspace root config
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 
-# Rebuild the source code only when needed
+# Copy workspace packages
+COPY packages/shared-types ./packages/shared-types
+COPY services/api ./services/api
+
+# Install all workspace dependencies (including shared-types)
+# Use shamefully-hoist to avoid symlink issues in Docker
+RUN npm install -g pnpm@8 && pnpm config set shamefully-hoist true && pnpm install -w
+
+# Build API
 FROM base AS builder
 WORKDIR /app
+RUN npm install -g pnpm@8
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY --from=deps /app/packages ./packages
+COPY --from=deps /app/services ./services
+COPY --from=deps /app/package.json ./package.json
+COPY --from=deps /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=deps /app/turbo.json ./turbo.json
 
-RUN pnpm build
+# Build
+RUN cd services/api && npx nest build
 
 # Production image
 FROM base AS runner
@@ -23,12 +37,16 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nestjs
+# Copy built dist and package.json
+COPY --from=builder /app/services/api/dist ./dist
+COPY --from=builder /app/services/api/package.json ./package.json
 
-COPY --from=builder /app/dist ./dist
+# Copy the entire node_modules from builder (contains .pnpm virtual store)
+# This ensures symlinks resolve correctly since everything is under /app
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+
+# Copy packages (shared-types)
+COPY --from=builder /app/packages ./packages
 
 USER nestjs
 

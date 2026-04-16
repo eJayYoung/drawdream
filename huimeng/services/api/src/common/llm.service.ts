@@ -150,6 +150,51 @@ ${JSON.stringify(parsedScript, null, 2)}
     }
   }
 
+  async generateCharacters(scriptContent: string): Promise<any[]> {
+    const systemPrompt = `你是专业的短剧角色设定专家，擅长根据剧本创作有特色的角色形象。`;
+
+    const prompt = `请根据以下剧本内容，提取并生成所有主要角色的信息。
+
+剧本内容：
+${scriptContent}
+
+请为每个角色生成：
+1. 角色名称
+2. 性别
+3. 年龄阶段（儿童/青年/中年/老年）
+4. 角色类型/职业
+5. 性格特点
+6. 外观描述（用于AI绘图）
+7. 适合的配音类型（温柔/浑厚/甜美/低沉等）
+
+请以JSON格式返回：
+{
+  "characters": [
+    {
+      "name": "角色名称",
+      "gender": "男/女",
+      "ageGroup": "青年",
+      "role": "角色类型/职业",
+      "personality": "性格特点",
+      "appearance": "外观描述",
+      "voiceType": "适合的配音类型"
+    }
+  ]
+}
+
+请直接返回JSON，不要有其他内容。`;
+
+    const response = await this.chat(prompt, systemPrompt);
+    const content = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+    try {
+      const parsed = JSON.parse(content);
+      return parsed.characters || [];
+    } catch {
+      return [];
+    }
+  }
+
   async generateStoryboardPrompt(episode: any, scene: any, style: string): Promise<string> {
     const prompt = `请为以下场景生成适合AI绘图的分镜描述。
 

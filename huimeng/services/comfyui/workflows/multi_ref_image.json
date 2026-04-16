@@ -1,0 +1,339 @@
+{
+  "38": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "122": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-fp32.safetensors",
+      "strength_model": 1,
+      "model": [
+        "339",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "302": {
+    "inputs": {
+      "seed": 342337759650902,
+      "steps": 8,
+      "cfg": 2,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.8,
+      "model": [
+        "122",
+        0
+      ],
+      "positive": [
+        "330",
+        0
+      ],
+      "negative": [
+        "331",
+        0
+      ],
+      "latent_image": [
+        "356",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "303": {
+    "inputs": {
+      "samples": [
+        "302",
+        0
+      ],
+      "vae": [
+        "380",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "330": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "375",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "FluxKontext多参考潜在方法"
+    }
+  },
+  "331": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "381",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "FluxKontext多参考潜在方法"
+    }
+  },
+  "339": {
+    "inputs": {
+      "unet_name": "qwen_image_edit_2511_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "351": {
+    "inputs": {
+      "image": "comfyui-airport-editorial_00077_.png [output]"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "352": {
+    "inputs": {
+      "image": "comfyui-airport-editorial_00082_.png [output]"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "353": {
+    "inputs": {
+      "image": "31.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "355": {
+    "inputs": {
+      "text": [
+        "384",
+        0
+      ]
+    },
+    "class_type": "CR Text",
+    "_meta": {
+      "title": "🔤 CR Text"
+    }
+  },
+  "356": {
+    "inputs": {
+      "width": [
+        "383",
+        0
+      ],
+      "height": [
+        "383",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
+    }
+  },
+  "375": {
+    "inputs": {
+      "prompt": [
+        "355",
+        0
+      ],
+      "clip": [
+        "38",
+        0
+      ],
+      "vae": [
+        "380",
+        0
+      ],
+      "image1": [
+        "351",
+        0
+      ],
+      "image2": [
+        "352",
+        0
+      ],
+      "image3": [
+        "353",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "文本编码（QwenImageEditPlus）"
+    }
+  },
+  "380": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "381": {
+    "inputs": {
+      "conditioning": [
+        "375",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "383": {
+    "inputs": {
+      "use_custom_resolution": false,
+      "resolution": "1920x1080 (16:9) (横屏)",
+      "custom_width": 1024,
+      "custom_height": 1024
+    },
+    "class_type": "TTResolutionSelector",
+    "_meta": {
+      "title": "TT分辨率选择器"
+    }
+  },
+  "384": {
+    "inputs": {
+      "model_name": "Qwen3-VL-8B-Instruct",
+      "quantization": "4-bit (VRAM-friendly)",
+      "attention_mode": "auto",
+      "preset_prompt": "🖼️ Detailed Description",
+      "custom_prompt": [
+        "386",
+        0
+      ],
+      "max_tokens": 512,
+      "keep_model_loaded": true,
+      "seed": 3579573334,
+      "image": [
+        "389",
+        0
+      ]
+    },
+    "class_type": "AILab_QwenVL",
+    "_meta": {
+      "title": "QwenVL"
+    }
+  },
+  "385": {
+    "inputs": {
+      "value": "白天，图1小孩在柜台前，图2老板老头在柜台后，图3是小卖部内部场景，请遵守柜台的真实合理性，老板在柜台里边，小孩在柜台外边。小孩递上皱巴巴的几张一元钱。老头慈祥地看向小孩。小孩背对镜头，老头正对镜头，小孩和老头对视，都不看镜头！"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "提示词"
+    }
+  },
+  "386": {
+    "inputs": {
+      "string_a": [
+        "385",
+        0
+      ],
+      "string_b": [
+        "387",
+        0
+      ],
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "387": {
+    "inputs": {
+      "text": "你是一个专业的电影导演，负责将用户的人物关系在场景上的细节完善得更好，也要注意场景的事物和人物的合理性。并且将这些信息转换成大模型更易识别的文本。"
+    },
+    "class_type": "CR Text",
+    "_meta": {
+      "title": "🔤 CR Text"
+    }
+  },
+  "389": {
+    "inputs": {
+      "inputcount": 3,
+      "Update inputs": null,
+      "image_1": [
+        "351",
+        0
+      ],
+      "image_2": [
+        "352",
+        0
+      ],
+      "image_3": [
+        "353",
+        0
+      ]
+    },
+    "class_type": "ImageBatchMulti",
+    "_meta": {
+      "title": "Image Batch Multi"
+    }
+  },
+  "390": {
+    "inputs": {
+      "output_file_path": "output",
+      "file_name": "qwen-2511_",
+      "file_extension": "txt",
+      "overwrite": true,
+      "text": [
+        "384",
+        0
+      ]
+    },
+    "class_type": "easy saveText",
+    "_meta": {
+      "title": "保存文本"
+    }
+  },
+  "391": {
+    "inputs": {
+      "filename_prefix": "qwen-2511_",
+      "images": [
+        "303",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  }
+}
