@@ -1,6 +1,6 @@
 # 绘梦 (Huimeng) 项目进度跟踪
 
-> 更新时间: 2026/04/16
+> 更新时间: 2026/04/17
 > 基于 docs/plan.md 架构文档
 
 ---
@@ -14,7 +14,7 @@
 | 共享包 | 1 | 0 | 3 | 4 |
 | 基础设施 | 3 | 0 | 1 | 4 |
 | API 端点 | 15 | 5 | 10 | 30 |
-| ComfyUI Workflows | 0 | 0 | 5 | 5 |
+| ComfyUI Workflows | 10 | 0 | 0 | 10 |
 
 **整体完成度: ~45%**
 
@@ -146,19 +146,19 @@
 ### 2. ComfyUI 服务 (services/comfyui)
 | 状态 | 进度 |
 |------|------|
-| ⚠️ 进行中 | 30% |
+| ⚠️ 进行中 | 50% |
 
 **已完成:**
 - [x] Python FastAPI 基础结构
 - [x] requirements.txt
 - [x] Docker 配置
 - [x] models/ 和 output/ 目录
+- [x] Workflow JSON 模板 (10个)
 
 **未完成:**
-- [ ] ComfyUI API 集成
-- [ ] Workflow 执行器
-- [ ] Manager 节点逻辑
-- [ ] WebSocket 实时进度
+- [ ] ComfyUI Manager 节点逻辑
+- [ ] Worker 节点部署
+- [ ] WebSocket 实时进度推送
 
 ---
 
@@ -247,15 +247,20 @@
 
 ## 五、ComfyUI Workflow 模板
 
-| Workflow | 状态 |
-|----------|------|
-| script_generation.json | ❌ |
-| character_image.json | ❌ |
-| storyboard_image.json | ❌ |
-| text_to_video.json | ❌ |
-| video_composition.json | ❌ |
+| Workflow | 状态 | 说明 |
+|----------|------|------|
+| character_image.json | ✅ | 角色图生成 (z_image_turbo) |
+| character_image_v2.json | ✅ | 角色图生成 v2 |
+| scene_image_portrait.json | ✅ | 竖屏场景图 |
+| scene_image_landscape.json | ✅ | 横屏场景图 |
+| scene_image_ref.json | ✅ | 场景参考图生图 |
+| multi_ref_image.json | ✅ | 多参考图生图 (Qwen) |
+| flux_multi_ref_image.json | ✅ | 多参考图生图 (Flux2) |
+| video_generation.json | ✅ | 视频生成 (LTXV 首尾帧) |
+| video_long_shot.json | ✅ | 视频长镜头 (LTXV 首中尾帧) |
+| multi_angle_camera.json | ✅ | 多角度分镜 |
 
-**说明:** services/comfyui/workflows/ 目录尚未创建
+**位置:** `services/comfyui/workflows/`
 
 ---
 
@@ -342,17 +347,17 @@
 | 2. 智能分集 | ⚠️ 接口存在，LLM 集成待完善 |
 | 3. 角色配音 | ❌ |
 | 4. 智能分镜 | ⚠️ 接口存在 |
-| 5. 分镜图生成 | ❌ (ComfyUI 未集成) |
-| 6. 成片合成 | ❌ (ComfyUI 未集成) |
+| 5. 分镜图生成 | ⚠️ API 已集成，需 ComfyUI 部署 |
+| 6. 成片合成 | ⚠️ API 已集成，需 ComfyUI 部署 |
 
 ### 3. ComfyUI 集成
 | 组件 | 状态 |
 |------|------|
-| Manager Node | ❌ |
-| Worker 节点 | ❌ |
-| REST API 封装 | ❌ |
-| WebSocket 进度推送 | ❌ |
-| Workflow 模板 | ❌ |
+| REST API 封装 | ✅ |
+| Workflow 模板 | ✅ (10个) |
+| Worker 节点 | ⚠️ 框架存在，部署待完成 |
+| Manager Node | ⚠️ 部分实现 |
+| WebSocket 进度推送 | ⚠️ API 层已实现，待 ComfyUI 回调 |
 
 ---
 
@@ -389,7 +394,7 @@
 | 数据库 | PostgreSQL 16 | ✅ |
 | 缓存 | Redis 7 | ⚠️ 配置中 |
 | 文件存储 | MinIO | ✅ |
-| ComfyUI | Python + FastAPI | ⚠️ 30% |
+| ComfyUI | Python + FastAPI | ⚠️ 50% |
 | 任务队列 | BullMQ | ❌ 未集成 |
 | 即时通讯 | Socket.io | ⚠️ Gateway 存在 |
 | 容器化 | Docker + K8s | ⚠️ Docker 完成 |
@@ -400,4 +405,5 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026/04/17 | 更新 ComfyUI 进度：Workflow 模板 10 个已完成，API 层已完成 |
 | 2026/04/16 | 初始进度文档创建 |

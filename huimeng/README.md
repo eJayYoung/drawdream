@@ -100,7 +100,7 @@ docker compose -f infra/docker-compose.yml up -d
 
 ### API 文档
 
-启动服务后访问: http://localhost:3001/api/docs
+启动服务后访问: http://localhost:8778/api/docs
 
 ### 数据库迁移
 
