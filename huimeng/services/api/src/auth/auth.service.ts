@@ -1,21 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { RedisService } from '../common/redis.service';
+
+const USER_KEY_PREFIX = 'huimeng:user:';
+const VERIFICATION_CODE_PREFIX = 'huimeng:code:';
 
 @Injectable()
 export class AuthService {
-  constructor(private jwtService: JwtService) {}
-
-  private users: Map<string, any> = new Map();
-  private verificationCodes: Map<string, { code: string; expiresAt: Date }> = new Map();
+  constructor(
+    private jwtService: JwtService,
+    private redisService: RedisService,
+  ) {}
 
   async sendCode(phone: string): Promise<{ success: boolean; code?: string }> {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    this.verificationCodes.set(phone, {
+    await this.redisService.set(
+      `${VERIFICATION_CODE_PREFIX}${phone}`,
       code,
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-    });
+      600,
+    );
     console.log(`[DEV] Verification code for ${phone}: ${code}`);
-    // Return code in response for dev testing
     return { success: true, code };
   }
 
@@ -25,27 +29,48 @@ export class AuthService {
     refreshToken: string;
     isNewUser: boolean;
   }> {
-    const stored = this.verificationCodes.get(phone);
-    if (!stored || stored.code !== code) {
+    const storedCode = await this.redisService.get(
+      `${VERIFICATION_CODE_PREFIX}${phone}`,
+    );
+    if (!storedCode || storedCode !== code) {
       throw new Error('验证码错误');
     }
-    if (stored.expiresAt < new Date()) {
-      throw new Error('验证码已过期');
+
+    await this.redisService.del(`${VERIFICATION_CODE_PREFIX}${phone}`);
+
+    const userKeys = await this.redisService.keys(`${USER_KEY_PREFIX}*`);
+    let user: any = null;
+
+    for (const key of userKeys) {
+      const userData = await this.redisService.getJson<any>(key);
+      if (userData?.phone === phone) {
+        user = userData;
+        break;
+      }
     }
 
-    let user = Array.from(this.users.values()).find((u) => u.phone === phone);
     if (!user) {
       user = {
         id: `user_${Date.now()}`,
         unionId: `phone_${phone}`,
         nickname: `用户${phone.slice(-4)}`,
         phone,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       };
-      this.users.set(user.id, user);
+      await this.redisService.setJson(
+        `${USER_KEY_PREFIX}${user.id}`,
+        user,
+        86400 * 30,
+      );
     }
 
-    user.lastLoginAt = new Date();
+    user.lastLoginAt = new Date().toISOString();
+    await this.redisService.setJson(
+      `${USER_KEY_PREFIX}${user.id}`,
+      user,
+      86400 * 30,
+    );
+
     const tokens = this.generateTokens(user);
 
     return {
@@ -66,7 +91,16 @@ export class AuthService {
     refreshToken: string;
   }> {
     const mockOpenid = `wechat_${code || 'dev'}`;
-    let user = Array.from(this.users.values()).find((u) => u.wechatOpenid === mockOpenid);
+    const userKeys = await this.redisService.keys(`${USER_KEY_PREFIX}*`);
+    let user: any = null;
+
+    for (const key of userKeys) {
+      const userData = await this.redisService.getJson<any>(key);
+      if (userData?.wechatOpenid === mockOpenid) {
+        user = userData;
+        break;
+      }
+    }
 
     if (!user) {
       user = {
@@ -74,12 +108,22 @@ export class AuthService {
         unionId: `wechat_${code || 'dev'}`,
         nickname: '微信用户',
         wechatOpenid: mockOpenid,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       };
-      this.users.set(user.id, user);
+      await this.redisService.setJson(
+        `${USER_KEY_PREFIX}${user.id}`,
+        user,
+        86400 * 30,
+      );
     }
 
-    user.lastLoginAt = new Date();
+    user.lastLoginAt = new Date().toISOString();
+    await this.redisService.setJson(
+      `${USER_KEY_PREFIX}${user.id}`,
+      user,
+      86400 * 30,
+    );
+
     const tokens = this.generateTokens(user);
 
     return {
@@ -94,7 +138,10 @@ export class AuthService {
   }
 
   async validateToken(payload: { sub: string }): Promise<any> {
-    return this.users.get(payload.sub);
+    const user = await this.redisService.getJson<any>(
+      `${USER_KEY_PREFIX}${payload.sub}`,
+    );
+    return user;
   }
 
   private generateTokens(user: any): { accessToken: string; refreshToken: string } {

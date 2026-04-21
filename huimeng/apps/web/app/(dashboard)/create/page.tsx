@@ -10,25 +10,9 @@ const aspectRatios = [
   { value: '1:1', label: '1:1 方屏', desc: '适合社交媒体' },
 ];
 
-const styles = [
-  { value: 'ancient', label: '古风', emoji: '🏯' },
-  { value: 'scifi', label: '科幻', emoji: '🚀' },
-  { value: 'modern', label: '现代', emoji: '🌆' },
-  { value: 'fantasy', label: '奇幻', emoji: '🧙' },
-  { value: 'romance', label: '浪漫', emoji: '💕' },
-  { value: 'horror', label: '悬疑', emoji: '🔮' },
-];
-
-const imageModels = [
-  { value: 'sdxl', label: 'SDXL 1.0', desc: '高质量图像' },
-  { value: 'sdxl-turbo', label: 'SDXL Turbo', desc: '快速生成' },
-  { value: 'dalle3', label: 'DALL-E 3', desc: 'OpenAI绘画' },
-];
-
-const videoModels = [
-  { value: 'svd', label: 'Stable Video', desc: '图生视频' },
-  { value: 'sora', label: 'Sora', desc: 'OpenAI视频' },
-  { value: 'pika', label: 'Pika', desc: 'AI视频生成' },
+const projectTypes = [
+  { value: 'single', label: '单部作品', desc: '电影、宣传片、单集创意片等', icon: '🎬' },
+  { value: 'series', label: '分集作品', desc: '多集连续剧', icon: '📺' },
 ];
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -37,9 +21,7 @@ export default function CreateProjectPage() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [aspectRatio, setAspectRatio] = useState('16:9');
-  const [style, setStyle] = useState('modern');
-  const [imageModel, setImageModel] = useState('sdxl');
-  const [videoModel, setVideoModel] = useState('svd');
+  const [projectType, setProjectType] = useState('single');
   const [loading, setLoading] = useState(false);
 
   const getToken = () => {
@@ -72,9 +54,7 @@ export default function CreateProjectPage() {
           name: name.trim(),
           description: '',
           aspectRatio,
-          style,
-          imageModel,
-          videoModel,
+          projectType,
         }),
       });
 
@@ -92,7 +72,7 @@ export default function CreateProjectPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8">
+    <div className="max-w-2xl mx-auto space-y-8 px-8 py-6">
       <div>
         <h1 className="text-2xl font-bold mb-2">新建项目</h1>
         <p className="text-muted-foreground">
@@ -110,6 +90,28 @@ export default function CreateProjectPage() {
           placeholder="给你的短剧起个名字"
           className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
         />
+      </div>
+
+      {/* Project Type */}
+      <div className="space-y-3">
+        <label className="block text-sm font-medium">作品类型</label>
+        <div className="grid grid-cols-2 gap-4">
+          {projectTypes.map((type) => (
+            <button
+              key={type.value}
+              onClick={() => setProjectType(type.value)}
+              className={`p-4 border rounded-lg text-left transition-all ${
+                projectType === type.value
+                  ? 'border-primary bg-primary/5 ring-2 ring-primary'
+                  : 'hover:border-primary/50'
+              }`}
+            >
+              <span className="text-2xl mb-2 block">{type.icon}</span>
+              <p className="font-medium text-sm">{type.label}</p>
+              <p className="text-xs text-muted-foreground">{type.desc}</p>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Aspect Ratio */}
@@ -141,70 +143,6 @@ export default function CreateProjectPage() {
               <p className="text-xs text-muted-foreground">{ratio.desc}</p>
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* Style */}
-      <div className="space-y-3">
-        <label className="block text-sm font-medium">视频风格</label>
-        <div className="grid grid-cols-3 gap-4">
-          {styles.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => setStyle(s.value)}
-              className={`p-4 border rounded-lg text-center transition-all ${
-                style === s.value
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary'
-                  : 'hover:border-primary/50'
-              }`}
-            >
-              <span className="text-2xl mb-1 block">{s.emoji}</span>
-              <p className="font-medium text-sm">{s.label}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Models */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <label className="block text-sm font-medium">生图模型</label>
-          <div className="space-y-2">
-            {imageModels.map((model) => (
-              <button
-                key={model.value}
-                onClick={() => setImageModel(model.value)}
-                className={`w-full p-3 border rounded-lg text-left transition-all ${
-                  imageModel === model.value
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-primary/50'
-                }`}
-              >
-                <p className="font-medium">{model.label}</p>
-                <p className="text-xs text-muted-foreground">{model.desc}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <label className="block text-sm font-medium">视频模型</label>
-          <div className="space-y-2">
-            {videoModels.map((model) => (
-              <button
-                key={model.value}
-                onClick={() => setVideoModel(model.value)}
-                className={`w-full p-3 border rounded-lg text-left transition-all ${
-                  videoModel === model.value
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-primary/50'
-                }`}
-              >
-                <p className="font-medium">{model.label}</p>
-                <p className="text-xs text-muted-foreground">{model.desc}</p>
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 

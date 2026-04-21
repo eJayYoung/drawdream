@@ -58,50 +58,16 @@ export class LlmService {
 请生成一个完整的短剧剧本，包含：
 1. 故事梗概（100字以内）
 2. 分集大纲（3-5集）
-3. 每集详细场景描述
+3. 每集详细剧情描述
 
-请以JSON格式返回，结构如下：
-{
-  "title": "${projectName}",
-  "summary": "故事梗概",
-  "episodes": [
-    {
-      "number": 1,
-      "title": "第1集标题",
-      "summary": "本集概要",
-      "scenes": [
-        {
-          "scene": 1,
-          "location": "场景地点",
-          "time": "时间",
-          "characters": ["角色1", "角色2"],
-          "action": "动作描述",
-          "dialogue": "对话内容"
-        }
-      ]
-    }
-  ]
-}
-
-请直接返回JSON，不要有其他内容。注意：title字段必须使用"${projectName}"。`;
+请直接以文本格式返回剧本内容，使用清晰的标题和分段。`;
 
     const response = await this.chat(prompt, systemPrompt);
-    const content = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-    try {
-      const parsed = JSON.parse(content);
-      const wordCount = content.length;
-      return {
-        content: JSON.stringify(parsed, null, 2),
-        wordCount,
-      };
-    } catch {
-      // 如果不是有效JSON，直接返回
-      return {
-        content,
-        wordCount: content.length,
-      };
-    }
+    const wordCount = response.length;
+    return {
+      content: response,
+      wordCount,
+    };
   }
 
   async splitEpisodes(scriptContent: string, episodeCount?: number): Promise<any[]> {
@@ -190,6 +156,49 @@ ${scriptContent}
     try {
       const parsed = JSON.parse(content);
       return parsed.characters || [];
+    } catch {
+      return [];
+    }
+  }
+
+  async generateScenes(scriptContent: string): Promise<any[]> {
+    const systemPrompt = `你是专业的影视场景设计师，擅长根据剧本提取和设计场景环境。`;
+
+    const prompt = `请根据以下剧本内容，提取并生成所有场景的信息。
+
+剧本内容：
+${scriptContent}
+
+请为每个场景生成：
+1. 场景名称
+2. 场景描述（环境、氛围）
+3. 时间（白天/傍晚/夜晚）
+4. 天气（晴朗/阴天/雨天等）
+5. 场景类型（室内/室外）
+6. 关键道具或元素
+
+请以JSON格式返回：
+{
+  "scenes": [
+    {
+      "name": "场景名称",
+      "description": "场景描述",
+      "timeOfDay": "白天/傍晚/夜晚",
+      "weather": "天气",
+      "type": "室内/室外",
+      "elements": ["关键道具1", "关键道具2"]
+    }
+  ]
+}
+
+请直接返回JSON，不要有其他内容。`;
+
+    const response = await this.chat(prompt, systemPrompt);
+    const content = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+    try {
+      const parsed = JSON.parse(content);
+      return parsed.scenes || [];
     } catch {
       return [];
     }

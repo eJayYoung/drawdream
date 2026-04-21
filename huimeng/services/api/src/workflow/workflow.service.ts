@@ -104,12 +104,94 @@ export class WorkflowService {
       const characters = await this.llmService.generateCharacters(scriptContent);
 
       // 将角色数据保存到项目表中
-      await this.projectService.saveCharacters(projectId, characters);
-
-      this.logger.log(`Generated ${characters.length} characters and saved`);
+      this.logger.log(`Generated ${characters.length} characters for preview`);
       return characters;
     } catch (error: any) {
       this.logger.error(`Failed to generate characters: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async generateScenes(projectId: string, scriptContent: string): Promise<any[]> {
+    try {
+      this.logger.log(`Generating scenes for project ${projectId}`);
+
+      const scenes = await this.llmService.generateScenes(scriptContent);
+
+      this.logger.log(`Generated ${scenes.length} scenes for preview`);
+      return scenes;
+    } catch (error: any) {
+      this.logger.error(`Failed to generate scenes: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async generateProjectStoryboards(
+    projectId: string,
+    scriptContent: string,
+    style?: string,
+  ): Promise<any[]> {
+    try {
+      this.logger.log(`Generating storyboards for project ${projectId}`);
+
+      let scriptData: any;
+      try {
+        scriptData = typeof scriptContent === 'string'
+          ? JSON.parse(scriptContent)
+          : scriptContent;
+      } catch {
+        scriptData = { scenes: [] };
+      }
+
+      const scenes = scriptData.scenes || scriptData.episodes?.[0]?.scenes || [];
+      const storyboardStyle = style || 'cinematic';
+      const storyboards: any[] = [];
+
+      for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i];
+
+        let storyboardData: any;
+        try {
+          const llmResult = await this.llmService.generateStoryboardPrompt(
+            { scriptContent },
+            scene,
+            storyboardStyle,
+          );
+          storyboardData = JSON.parse(llmResult);
+        } catch {
+          storyboardData = {
+            imagePrompt: `${scene.location}, ${scene.action}, ${storyboardStyle} style, cinematic`,
+            shotType: this.suggestShotType(scene),
+            narration: scene.dialogue,
+            dialogue: scene.dialogue,
+          };
+        }
+
+        const storyboard = {
+          id: uuidv4(),
+          projectId,
+          sceneNumber: i + 1,
+          shotType: storyboardData.shotType || 'medium',
+          description: scene.action,
+          imagePrompt: storyboardData.imagePrompt,
+          narration: storyboardData.narration,
+          dialogue: storyboardData.dialogue,
+          durationFrames: 48,
+          orderIndex: i,
+          status: 'pending',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        storyboards.push(storyboard);
+        this.storyboards.set(storyboard.id, storyboard);
+      }
+
+      await this.projectService.saveStoryboards(projectId, storyboards);
+
+      this.logger.log(`Generated ${storyboards.length} storyboards for project ${projectId}`);
+      return storyboards;
+    } catch (error: any) {
+      this.logger.error(`Failed to generate project storyboards: ${error.message}`);
       throw error;
     }
   }
