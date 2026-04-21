@@ -75,6 +75,39 @@ export class WorkflowController {
     return characters;
   }
 
+  @Post('projects/:projectId/scenes')
+  @ApiOperation({ summary: '生成场景' })
+  async generateScenes(
+    @Param('projectId') projectId: string,
+    @Body() body: { scriptContent: string },
+  ) {
+    const scenes = await this.workflowService.generateScenes(
+      projectId,
+      body.scriptContent,
+    );
+    return scenes;
+  }
+
+  @Post('projects/:projectId/storyboards')
+  @ApiOperation({ summary: '为单部作品生成分镜' })
+  async generateProjectStoryboards(
+    @Param('projectId') projectId: string,
+    @Body() body: { scriptContent: string; style?: string },
+  ) {
+    const storyboards = await this.workflowService.generateProjectStoryboards(
+      projectId,
+      body.scriptContent,
+      body.style,
+    );
+    return storyboards.map((s) => ({
+      id: s.id,
+      sceneNumber: s.sceneNumber,
+      shotType: s.shotType,
+      description: s.description,
+      imagePrompt: s.imagePrompt,
+    }));
+  }
+
   @Post('episodes/:episodeId/storyboards')
   @ApiOperation({ summary: '生成分镜' })
   async generateStoryboards(

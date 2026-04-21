@@ -25,47 +25,15 @@ export class ProjectController {
   async findAll(@Request() req: any) {
     const projects = await this.projectService.findAllByUser(req.user.id);
     return projects.map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      aspectRatio: p.aspectRatio,
-      style: p.style,
-      imageModel: p.imageModel,
-      videoModel: p.videoModel,
-      coverImageUrl: p.coverImageUrl,
-      status: p.status,
-      episodeCount: (p.episodesData && p.episodesData.length) || (p.episodes && p.episodes.length) || 0,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
+      ...p,
+      episodeCount: (p.episodesData?.length || p.episodes?.length || 0),
     }));
   }
 
   @Get(':id')
   @ApiOperation({ summary: '获取项目详情' })
   async findOne(@Param('id') id: string) {
-    const project = await this.projectService.findById(id);
-    return {
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      aspectRatio: project.aspectRatio,
-      style: project.style,
-      imageModel: project.imageModel,
-      videoModel: project.videoModel,
-      coverImageUrl: project.coverImageUrl,
-      status: project.status,
-      // 创作内容回填
-      scriptContent: project.scriptContent,
-      episodesData: project.episodesData || project.episodes || [],
-      charactersData: project.charactersData || project.characters || [],
-      storyboardsData: project.storyboardsData || [],
-      imagesData: project.imagesData || [],
-      videoUrl: project.videoUrl,
-      episodes: project.episodes || [],
-      characters: project.characters || [],
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-    };
+    return this.projectService.findById(id);
   }
 
   @Post()
@@ -90,6 +58,14 @@ export class ProjectController {
     return { success: true };
   }
 
+  // 保存剧本列表
+  @Post(':id/scripts')
+  @ApiOperation({ summary: '保存剧本列表' })
+  async saveScripts(@Param('id') id: string, @Body() dto: { scriptsData: any[]; selectedScriptIndex?: number }) {
+    const project = await this.projectService.saveScripts(id, dto.scriptsData, dto.selectedScriptIndex);
+    return { success: true };
+  }
+
   // 保存分集
   @Post(':id/episodes-data')
   @ApiOperation({ summary: '保存分集数据' })
@@ -103,6 +79,14 @@ export class ProjectController {
   @ApiOperation({ summary: '保存角色数据' })
   async saveCharacters(@Param('id') id: string, @Body() dto: { charactersData: any[] }) {
     const project = await this.projectService.saveCharacters(id, dto.charactersData);
+    return { success: true };
+  }
+
+  // 保存场景
+  @Post(':id/scenes-data')
+  @ApiOperation({ summary: '保存场景数据' })
+  async saveScenes(@Param('id') id: string, @Body() dto: { scenesData: any[] }) {
+    const project = await this.projectService.saveScenes(id, dto.scenesData);
     return { success: true };
   }
 

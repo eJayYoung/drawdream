@@ -1,176 +1,213 @@
 import { Injectable } from '@nestjs/common';
+import { EntityRepository } from '@mikro-orm/postgresql';
+import { InjectRepository } from '@mikro-orm/nestjs';
 import { v4 as uuidv4 } from 'uuid';
+import { Project, Episode, Character } from '../entities';
 
 @Injectable()
 export class ProjectService {
-  private projects: Map<string, any> = new Map();
-  private episodes: Map<string, any> = new Map();
-  private characters: Map<string, any> = new Map();
+  constructor(
+    @InjectRepository(Project)
+    private projectRepo: EntityRepository<Project>,
+    @InjectRepository(Episode)
+    private episodeRepo: EntityRepository<Episode>,
+    @InjectRepository(Character)
+    private characterRepo: EntityRepository<Character>,
+  ) {}
 
   async findAllByUser(userId: string): Promise<any[]> {
-    return Array.from(this.projects.values())
-      .filter((p) => p.userId === userId)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+    const projects = await this.projectRepo.find(
+      { userId },
+      { orderBy: { updatedAt: 'DESC' } }
+    );
+    return projects.map((project) => this.mapProject(project));
   }
 
-  async findById(id: string): Promise<any> {
-    const project = this.projects.get(id);
-    if (!project) {
-      throw new Error('项目不存在');
-    }
-    const episodes = Array.from(this.episodes.values())
-      .filter((e) => e.projectId === id)
-      .sort((a, b) => a.orderIndex - b.orderIndex);
-    const characters = Array.from(this.characters.values())
-      .filter((c) => c.projectId === id);
-
+  private mapProject(project: Project, episodes: any[] = [], characters: any[] = []) {
+    const raw: any = JSON.parse(JSON.stringify(project));
     return {
-      ...project,
+      id: raw.id,
+      userId: raw.userId,
+      name: raw.name,
+      description: raw.description,
+      aspectRatio: raw.aspectRatio,
+      projectType: raw.projectType,
+      style: raw.style,
+      imageModel: raw.imageModel,
+      videoModel: raw.videoModel,
+      coverImageUrl: raw.coverImageUrl,
+      status: raw.status,
+      scriptsData: raw.scriptsData || raw.scripts_data || [],
+      scriptContent: raw.scriptContent || raw.script_content || '',
+      selectedScriptIndex: raw.selectedScriptIndex ?? raw.selected_script_index,
+      episodesData: raw.episodesData || raw.episodes_data || [],
+      charactersData: raw.charactersData || raw.characters_data || [],
+      scenesData: raw.scenesData || raw.scenes_data || [],
+      storyboardsData: raw.storyboardsData || raw.storyboards_data || [],
+      imagesData: raw.imagesData || raw.images_data || [],
+      videoUrl: raw.videoUrl,
       episodes,
       characters,
+      createdAt: raw.createdAt || raw.created_at,
+      updatedAt: raw.updatedAt || raw.updated_at,
     };
   }
 
+  async findById(id: string): Promise<any> {
+    const project = await this.projectRepo.findOne({ id });
+    if (!project) {
+      throw new Error('项目不存在');
+    }
+    const episodes = await this.episodeRepo.find(
+      { project: { id } },
+      { orderBy: { orderIndex: 'ASC' } }
+    );
+    const characters = await this.characterRepo.find({ project: { id } });
+
+    return this.mapProject(
+      project,
+      JSON.parse(JSON.stringify(episodes)),
+      JSON.parse(JSON.stringify(characters))
+    );
+  }
+
   async create(userId: string, dto: any): Promise<any> {
-    const project = {
+    const project = this.projectRepo.create({
       id: uuidv4(),
       userId,
       name: dto.name,
       description: dto.description,
       aspectRatio: dto.aspectRatio || '16:9',
+      projectType: dto.projectType || 'single',
       style: dto.style || 'modern',
       imageModel: dto.imageModel || 'sdxl',
       videoModel: dto.videoModel || 'svd',
       status: 'draft',
-      // 创作内容存储
-      scriptContent: null,
+      scriptsData: [],
+      scriptContent: '',
       episodesData: [],
       charactersData: [],
+      scenesData: [],
       storyboardsData: [],
       imagesData: [],
       videoUrl: null,
       coverImageUrl: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.projects.set(project.id, project);
-    return project;
+    } as any);
+    const em = this.projectRepo.getEntityManager() as any;
+    em.persist(project);
+    await em.flush();
+    return this.mapProject(project);
   }
 
   async update(id: string, dto: any): Promise<any> {
-    const project = await this.findById(id);
-    Object.assign(project, dto, { updatedAt: new Date() });
-    return project;
+    const project = await this.projectRepo.findOne({ id });
+    if (!project) throw new Error('项目不存在');
+    Object.assign(project, dto);
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
   }
 
-  // 保存剧本内容
   async saveScript(id: string, scriptContent: any): Promise<any> {
-    const project = this.projects.get(id);
+    const project = await this.projectRepo.findOne({ id });
     if (!project) throw new Error('项目不存在');
     project.scriptContent = scriptContent;
-    project.updatedAt = new Date();
-    return project;
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
   }
 
-  // 保存分集内容
+  async saveScripts(id: string, scriptsData: any[], selectedScriptIndex?: number): Promise<any> {
+    const project = await this.projectRepo.findOne({ id });
+    if (!project) throw new Error('项目不存在');
+    project.scriptsData = scriptsData;
+    if (selectedScriptIndex !== undefined) {
+      project.selectedScriptIndex = selectedScriptIndex;
+    }
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
+  }
+
   async saveEpisodes(id: string, episodesData: any[]): Promise<any> {
-    const project = this.projects.get(id);
+    const project = await this.projectRepo.findOne({ id });
     if (!project) throw new Error('项目不存在');
     project.episodesData = episodesData;
-    project.updatedAt = new Date();
-
-    for (let i = 0; i < episodesData.length; i++) {
-      const epData = episodesData[i];
-      const episode = {
-        id: uuidv4(),
-        projectId: id,
-        episodeNumber: epData.episodeNumber || i + 1,
-        title: epData.title,
-        summary: epData.summary,
-        scriptContent: typeof epData === 'string' ? epData : JSON.stringify(epData),
-        estimatedDuration: epData.estimatedDuration || 180,
-        status: 'completed',
-        orderIndex: i,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      this.episodes.set(episode.id, episode);
-    }
-
-    return project;
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
   }
 
-  // 保存角色内容
   async saveCharacters(id: string, charactersData: any[]): Promise<any> {
-    const project = this.projects.get(id);
+    const project = await this.projectRepo.findOne({ id });
     if (!project) throw new Error('项目不存在');
     project.charactersData = charactersData;
-    project.updatedAt = new Date();
-
-    for (const charData of charactersData) {
-      const character = {
-        id: uuidv4(),
-        projectId: id,
-        name: charData.name,
-        gender: charData.gender,
-        ageGroup: charData.ageGroup,
-        role: charData.role,
-        personality: charData.personality,
-        appearance: charData.appearance,
-        voiceType: charData.voiceType,
-        imageUrls: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      this.characters.set(character.id, character);
-    }
-
-    return project;
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
   }
 
-  // 保存分镜内容
+  async saveScenes(id: string, scenesData: any[]): Promise<any> {
+    const project = await this.projectRepo.findOne({ id });
+    if (!project) throw new Error('项目不存在');
+    project.scenesData = scenesData;
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
+  }
+
   async saveStoryboards(id: string, storyboardsData: any[]): Promise<any> {
-    const project = this.projects.get(id);
+    const project = await this.projectRepo.findOne({ id });
     if (!project) throw new Error('项目不存在');
     project.storyboardsData = storyboardsData;
-    project.updatedAt = new Date();
-    return project;
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
   }
 
-  // 保存分镜图
   async saveImages(id: string, imagesData: any[]): Promise<any> {
-    const project = this.projects.get(id);
+    const project = await this.projectRepo.findOne({ id });
     if (!project) throw new Error('项目不存在');
     project.imagesData = imagesData;
-    project.updatedAt = new Date();
-    return project;
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
   }
 
-  // 保存成片
   async saveVideo(id: string, videoUrl: string, coverImageUrl?: string): Promise<any> {
-    const project = this.projects.get(id);
+    const project = await this.projectRepo.findOne({ id });
     if (!project) throw new Error('项目不存在');
     project.videoUrl = videoUrl;
     if (coverImageUrl) project.coverImageUrl = coverImageUrl;
     project.status = 'completed';
-    project.updatedAt = new Date();
-    return project;
+    const em = this.projectRepo.getEntityManager() as any;
+    await em.flush();
+    return this.mapProject(project);
   }
 
   async delete(id: string): Promise<void> {
-    this.projects.delete(id);
+    const project = await this.projectRepo.findOne({ id });
+    if (project) {
+      const em = this.projectRepo.getEntityManager() as any;
+      em.remove(project);
+      await em.flush();
+    }
   }
 
   async findEpisodes(projectId: string): Promise<any[]> {
-    return Array.from(this.episodes.values())
-      .filter((e) => e.projectId === projectId)
-      .sort((a, b) => a.orderIndex - b.orderIndex);
+    const episodes = await this.episodeRepo.find(
+      { project: { id: projectId } },
+      { orderBy: { orderIndex: 'ASC' } }
+    );
+    return JSON.parse(JSON.stringify(episodes));
   }
 
   async createEpisode(projectId: string, dto: any): Promise<any> {
-    const episode = {
+    const project = await this.projectRepo.findOne({ id: projectId });
+    if (!project) throw new Error('项目不存在');
+    const episode = this.episodeRepo.create({
       id: uuidv4(),
-      projectId,
+      project,
       episodeNumber: dto.episodeNumber,
       title: dto.title,
       scriptContent: dto.scriptContent,
@@ -179,48 +216,65 @@ export class ProjectService {
       orderIndex: dto.orderIndex || 0,
       createdAt: new Date(),
       updatedAt: new Date(),
-    };
-    this.episodes.set(episode.id, episode);
-    return episode;
+    } as any);
+    const em = this.episodeRepo.getEntityManager() as any;
+    em.persist(episode);
+    await em.flush();
+    return JSON.parse(JSON.stringify(episode));
   }
 
   async updateEpisode(id: string, dto: any): Promise<any> {
-    const episode = this.episodes.get(id);
+    const episode = await this.episodeRepo.findOne({ id });
     if (!episode) throw new Error('Episode not found');
-    Object.assign(episode, dto, { updatedAt: new Date() });
-    return episode;
+    Object.assign(episode, dto);
+    const em = this.episodeRepo.getEntityManager() as any;
+    await em.flush();
+    return JSON.parse(JSON.stringify(episode));
   }
 
   async findCharacters(projectId: string): Promise<any[]> {
-    return Array.from(this.characters.values()).filter(
-      (c) => c.projectId === projectId
-    );
+    const characters = await this.characterRepo.find({ project: { id: projectId } });
+    return JSON.parse(JSON.stringify(characters));
   }
 
   async createCharacter(projectId: string, dto: any): Promise<any> {
-    const character = {
+    const project = await this.projectRepo.findOne({ id: projectId });
+    if (!project) throw new Error('项目不存在');
+    const character = this.characterRepo.create({
       id: uuidv4(),
-      projectId,
+      project,
       name: dto.name,
-      description: dto.description,
+      gender: dto.gender,
+      ageGroup: dto.ageGroup,
+      role: dto.role,
+      personality: dto.personality,
       appearance: dto.appearance,
       voiceType: dto.voiceType || 'female_1',
       imageUrls: dto.imageUrls || [],
       createdAt: new Date(),
       updatedAt: new Date(),
-    };
-    this.characters.set(character.id, character);
-    return character;
+    } as any);
+    const em = this.characterRepo.getEntityManager() as any;
+    em.persist(character);
+    await em.flush();
+    return JSON.parse(JSON.stringify(character));
   }
 
   async updateCharacter(id: string, dto: any): Promise<any> {
-    const character = this.characters.get(id);
+    const character = await this.characterRepo.findOne({ id });
     if (!character) throw new Error('Character not found');
-    Object.assign(character, dto, { updatedAt: new Date() });
-    return character;
+    Object.assign(character, dto);
+    const em = this.characterRepo.getEntityManager() as any;
+    await em.flush();
+    return JSON.parse(JSON.stringify(character));
   }
 
   async deleteCharacter(id: string): Promise<void> {
-    this.characters.delete(id);
+    const character = await this.characterRepo.findOne({ id });
+    if (character) {
+      const em = this.characterRepo.getEntityManager() as any;
+      em.remove(character);
+      await em.flush();
+    }
   }
 }

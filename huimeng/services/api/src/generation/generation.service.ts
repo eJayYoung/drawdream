@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-import { ComfyUIService } from '../common/comfyui.service';
+import { Injectable, Logger } from "@nestjs/common";
+import { v4 as uuidv4 } from "uuid";
+import { ComfyUIService } from "../common/comfyui.service";
 import {
   WorkflowTemplateService,
   CharacterImageParams,
@@ -11,14 +11,14 @@ import {
   VideoGenerationParams,
   VideoLongShotParams,
   MultiAngleCameraParams,
-} from '../common/workflow-template.service';
-import { GenerationGateway } from './generation.gateway';
+} from "../common/workflow-template.service";
+import { GenerationGateway } from "./generation.gateway";
 
 export interface GenerationTask {
   id: string;
   projectId: string;
   taskType: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
+  status: "queued" | "running" | "completed" | "failed";
   progress: number;
   inputParams: Record<string, unknown>;
   outputResult?: Record<string, unknown>;
@@ -59,7 +59,7 @@ export class GenerationService {
       id: uuidv4(),
       projectId,
       taskType,
-      status: 'queued',
+      status: "queued",
       progress: 0,
       inputParams,
       createdAt: new Date(),
@@ -80,51 +80,51 @@ export class GenerationService {
     const task = this.tasks.get(taskId);
     if (!task) return;
 
-    task.status = 'running';
+    task.status = "running";
     task.progress = 0;
 
     try {
       switch (task.taskType) {
-        case 'character_image':
+        case "character_image":
           await this.generateCharacterImage(task);
           break;
-        case 'character_image_v2':
+        case "character_image_v2":
           await this.generateCharacterImageV2(task);
           break;
-        case 'scene_image_portrait':
+        case "scene_image_portrait":
           await this.generateSceneImagePortrait(task);
           break;
-        case 'scene_image_landscape':
+        case "scene_image_landscape":
           await this.generateSceneImageLandscape(task);
           break;
-        case 'scene_image_ref':
+        case "scene_image_ref":
           await this.generateSceneImageRef(task);
           break;
-        case 'multi_ref_image':
+        case "multi_ref_image":
           await this.generateMultiRefImage(task);
           break;
-        case 'flux_multi_ref_image':
+        case "flux_multi_ref_image":
           await this.generateFluxMultiRefImage(task);
           break;
-        case 'video_generation':
+        case "video_generation":
           await this.generateVideo(task);
           break;
-        case 'video_long_shot':
+        case "video_long_shot":
           await this.generateVideoLongShot(task);
           break;
-        case 'multi_angle_camera':
+        case "multi_angle_camera":
           await this.generateMultiAngleCamera(task);
           break;
         default:
           throw new Error(`Unknown task type: ${task.taskType}`);
       }
 
-      task.status = 'completed';
+      task.status = "completed";
       task.progress = 100;
       task.completedAt = new Date();
       this.logger.log(`Task ${taskId} completed`);
     } catch (error: any) {
-      task.status = 'failed';
+      task.status = "failed";
       task.error = error.message;
       task.completedAt = new Date();
       this.logger.error(`Task ${taskId} failed: ${error.message}`);
@@ -147,7 +147,7 @@ export class GenerationService {
     imagePaths: string[],
     projectId: string,
   ): Promise<UploadedImages> {
-    const cacheKey = `${projectId}-${imagePaths.sort().join(',')}`;
+    const cacheKey = `${projectId}-${imagePaths.sort().join(",")}`;
     if (this.uploadedImagesCache.has(cacheKey)) {
       return this.uploadedImagesCache.get(cacheKey)!;
     }
@@ -155,14 +155,38 @@ export class GenerationService {
     const uploaded: UploadedImages = {};
 
     for (const imagePath of imagePaths) {
-      if (imagePath.startsWith('http') || uploaded[imagePath]) {
+      if (imagePath.startsWith("http") || uploaded[imagePath]) {
         continue;
       }
 
       try {
+        if (imagePath.startsWith("data:image/")) {
+          const matched = imagePath.match(
+            /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/,
+          );
+          if (!matched) {
+            this.logger.warn(`Invalid data URL image, skipping upload`);
+            continue;
+          }
+
+          const mimeType = matched[1];
+          const base64Data = matched[2];
+          const extension =
+            mimeType.split("/")[1]?.replace("jpeg", "jpg") || "png";
+          const filename = `upload-${projectId}-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}.${extension}`;
+          const buffer = Buffer.from(base64Data, "base64");
+
+          await this.comfyUIService.uploadImage(buffer, filename);
+          uploaded[imagePath] = filename;
+          this.logger.log(`Uploaded data URL image: ${filename}`);
+          continue;
+        }
+
         // 如果是本地文件路径，读取并上传
-        const fs = await import('fs');
-        const path = await import('path');
+        const fs = await import("fs");
+        const path = await import("path");
 
         let buffer: Buffer;
         if (fs.existsSync(imagePath)) {
@@ -170,7 +194,9 @@ export class GenerationService {
         } else if (fs.existsSync(path.join(process.cwd(), imagePath))) {
           buffer = fs.readFileSync(path.join(process.cwd(), imagePath));
         } else {
-          this.logger.warn(`Image file not found: ${imagePath}, skipping upload`);
+          this.logger.warn(
+            `Image file not found: ${imagePath}, skipping upload`,
+          );
           continue;
         }
 
@@ -179,7 +205,9 @@ export class GenerationService {
         uploaded[imagePath] = filename;
         this.logger.log(`Uploaded image: ${filename}`);
       } catch (error: any) {
-        this.logger.warn(`Failed to upload image ${imagePath}: ${error.message}`);
+        this.logger.warn(
+          `Failed to upload image ${imagePath}: ${error.message}`,
+        );
       }
     }
 
@@ -223,7 +251,8 @@ export class GenerationService {
       steps: params.steps,
       cfg: params.cfg,
       sampler_name: params.sampler_name,
-      filename_prefix: params.filename_prefix || `huimeng/character_v2/${task.id}`,
+      filename_prefix:
+        params.filename_prefix || `huimeng/character_v2/${task.id}`,
     });
 
     this.logger.log(`Submitting character image v2 task ${task.id} to ComfyUI`);
@@ -235,18 +264,23 @@ export class GenerationService {
 
   // ============ 场景图生成 ============
 
-  private async generateSceneImagePortrait(task: GenerationTask): Promise<void> {
+  private async generateSceneImagePortrait(
+    task: GenerationTask,
+  ): Promise<void> {
     const params = task.inputParams as unknown as SceneImageParams;
 
-    const workflow = this.workflowTemplateService.getSceneImagePortraitWorkflow({
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      filename_prefix: params.filename_prefix || `huimeng/scene_portrait/${task.id}`,
-    });
+    const workflow = this.workflowTemplateService.getSceneImagePortraitWorkflow(
+      {
+        prompt: params.prompt,
+        negative_prompt: params.negative_prompt,
+        seed: params.seed,
+        steps: params.steps,
+        cfg: params.cfg,
+        sampler_name: params.sampler_name,
+        filename_prefix:
+          params.filename_prefix || `huimeng/scene_portrait/${task.id}`,
+      },
+    );
 
     this.logger.log(`Submitting scene portrait task ${task.id} to ComfyUI`);
     const result = await this.comfyUIService.executeWorkflow(workflow);
@@ -255,18 +289,22 @@ export class GenerationService {
     task.outputResult = { images, prompt_id: task.id };
   }
 
-  private async generateSceneImageLandscape(task: GenerationTask): Promise<void> {
+  private async generateSceneImageLandscape(
+    task: GenerationTask,
+  ): Promise<void> {
     const params = task.inputParams as unknown as SceneImageParams;
 
-    const workflow = this.workflowTemplateService.getSceneImageLandscapeWorkflow({
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      filename_prefix: params.filename_prefix || `huimeng/scene_landscape/${task.id}`,
-    });
+    const workflow =
+      this.workflowTemplateService.getSceneImageLandscapeWorkflow({
+        prompt: params.prompt,
+        negative_prompt: params.negative_prompt,
+        seed: params.seed,
+        steps: params.steps,
+        cfg: params.cfg,
+        sampler_name: params.sampler_name,
+        filename_prefix:
+          params.filename_prefix || `huimeng/scene_landscape/${task.id}`,
+      });
 
     this.logger.log(`Submitting scene landscape task ${task.id} to ComfyUI`);
     const result = await this.comfyUIService.executeWorkflow(workflow);
@@ -279,8 +317,12 @@ export class GenerationService {
     const params = task.inputParams as unknown as SceneImageRefParams;
 
     // 上传参考图
-    const uploaded = await this.uploadImagesToComfyUI([params.reference_image], task.projectId);
-    const remoteImage = uploaded[params.reference_image] || params.reference_image;
+    const uploaded = await this.uploadImagesToComfyUI(
+      [params.reference_image],
+      task.projectId,
+    );
+    const remoteImage =
+      uploaded[params.reference_image] || params.reference_image;
 
     const workflow = this.workflowTemplateService.getSceneImageRefWorkflow({
       reference_image: remoteImage,
@@ -307,7 +349,10 @@ export class GenerationService {
     const params = task.inputParams as unknown as MultiRefImageParams;
 
     // 上传参考图
-    const uploaded = await this.uploadImagesToComfyUI(params.reference_images, task.projectId);
+    const uploaded = await this.uploadImagesToComfyUI(
+      params.reference_images,
+      task.projectId,
+    );
     const remoteImages = params.reference_images.map(
       (img) => uploaded[img] || img,
     );
@@ -339,24 +384,32 @@ export class GenerationService {
       allImages.push(params.scene_reference);
     }
 
-    const uploaded = await this.uploadImagesToComfyUI(allImages, task.projectId);
+    const uploaded = await this.uploadImagesToComfyUI(
+      allImages,
+      task.projectId,
+    );
     const remoteImages = params.reference_images.map(
       (img) => uploaded[img] || img,
     );
 
     const workflow = this.workflowTemplateService.getFluxMultiRefImageWorkflow({
       reference_images: remoteImages,
-      scene_reference: params.scene_reference ? uploaded[params.scene_reference] : undefined,
+      scene_reference: params.scene_reference
+        ? uploaded[params.scene_reference]
+        : undefined,
       prompt: params.prompt,
       negative_prompt: params.negative_prompt,
       seed: params.seed,
       steps: params.steps,
       cfg: params.cfg,
       sampler_name: params.sampler_name,
-      filename_prefix: params.filename_prefix || `huimeng/flux_multi_ref/${task.id}`,
+      filename_prefix:
+        params.filename_prefix || `huimeng/flux_multi_ref/${task.id}`,
     });
 
-    this.logger.log(`Submitting Flux multi-ref image task ${task.id} to ComfyUI`);
+    this.logger.log(
+      `Submitting Flux multi-ref image task ${task.id} to ComfyUI`,
+    );
     const result = await this.comfyUIService.executeWorkflow(workflow);
 
     const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
@@ -405,11 +458,16 @@ export class GenerationService {
       allImages.push(params.middle_image);
     }
 
-    const uploaded = await this.uploadImagesToComfyUI(allImages, task.projectId);
+    const uploaded = await this.uploadImagesToComfyUI(
+      allImages,
+      task.projectId,
+    );
 
     const workflow = this.workflowTemplateService.getVideoLongShotWorkflow({
       start_image: uploaded[params.start_image] || params.start_image,
-      middle_image: params.middle_image ? (uploaded[params.middle_image] || params.middle_image) : undefined,
+      middle_image: params.middle_image
+        ? uploaded[params.middle_image] || params.middle_image
+        : undefined,
       end_image: uploaded[params.end_image] || params.end_image,
       prompt: params.prompt,
       negative_prompt: params.negative_prompt,
@@ -419,7 +477,8 @@ export class GenerationService {
       width: params.width,
       height: params.height,
       resolution: params.resolution,
-      filename_prefix: params.filename_prefix || `huimeng/video_long/${task.id}`,
+      filename_prefix:
+        params.filename_prefix || `huimeng/video_long/${task.id}`,
     });
 
     this.logger.log(`Submitting video long shot task ${task.id} to ComfyUI`);
@@ -434,7 +493,10 @@ export class GenerationService {
     const params = task.inputParams as unknown as MultiAngleCameraParams;
 
     // 上传源图片
-    const uploaded = await this.uploadImagesToComfyUI([params.source_image], task.projectId);
+    const uploaded = await this.uploadImagesToComfyUI(
+      [params.source_image],
+      task.projectId,
+    );
 
     const workflow = this.workflowTemplateService.getMultiAngleCameraWorkflow({
       source_image: uploaded[params.source_image] || params.source_image,
@@ -446,7 +508,8 @@ export class GenerationService {
       sampler_name: params.sampler_name,
       lora_name: params.lora_name,
       lora_strength: params.lora_strength,
-      filename_prefix: params.filename_prefix || `huimeng/multi_angle/${task.id}`,
+      filename_prefix:
+        params.filename_prefix || `huimeng/multi_angle/${task.id}`,
     });
 
     this.logger.log(`Submitting multi-angle camera task ${task.id} to ComfyUI`);
@@ -470,7 +533,7 @@ export class GenerationService {
 
   async handleComfyUICallback(
     jobId: string,
-    status: 'success' | 'failed',
+    status: "success" | "failed",
     outputs?: Record<string, unknown>,
     error?: string,
   ): Promise<void> {
@@ -479,7 +542,7 @@ export class GenerationService {
     );
     if (!task) return;
 
-    task.status = status === 'success' ? 'completed' : 'failed';
+    task.status = status === "success" ? "completed" : "failed";
     task.outputResult = outputs;
     task.error = error;
     task.completedAt = new Date();

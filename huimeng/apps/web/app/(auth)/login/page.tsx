@@ -9,7 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 export default function LoginPage() {
   const router = useRouter();
   const [loginType, setLoginType] = useState<'phone' | 'wechat'>('phone');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState('13800138000');
   const [code, setCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -35,9 +35,8 @@ export default function LoginPage() {
       if (data.success) {
         setCodeSent(true);
         setCountdown(60);
-        // 开发模式下显示验证码
         if (data.code) {
-          console.log(`[DEV] 验证码: ${data.code}`);
+          setCode(data.code);
         }
       } else {
         setError('发送失败');
