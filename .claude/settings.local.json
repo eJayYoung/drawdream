@@ -67,7 +67,8 @@
       "Bash(grep:*)",
       "Bash(ping -c 3 36.139.149.26)",
       "Bash(awk '{print $1}')",
-      "Bash(xargs -r docker stop)"
+      "Bash(xargs -r docker stop)",
+      "Bash(npm run:*)"
     ]
   }
 }
