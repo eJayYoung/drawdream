@@ -70,8 +70,8 @@ cp .env.example .env
 # 启动基础设施 (PostgreSQL, Redis, MinIO)
 docker compose -f infra/docker-compose.yml up -d postgres redis minio
 
-# 运行数据库迁移
-pnpm db:migrate
+# 创建数据库表结构
+cd services/api && pnpm exec mikro-orm schema:create --run
 
 # 启动开发服务器
 pnpm dev
@@ -104,12 +104,24 @@ docker compose -f infra/docker-compose.yml up -d
 
 ### 数据库迁移
 
-```bash
-# 生成迁移
-pnpm db:generate
+开发阶段使用 `schema:create` / `schema:update` 直接同步 entity 到数据库表结构：
 
-# 运行迁移
-pnpm db:migrate
+```bash
+# 首次创建表结构
+pnpm exec mikro-orm schema:create --run
+
+# entity 变更后同步
+pnpm exec mikro-orm schema:update --run
+```
+
+生产环境建议用 migration 方式管理：
+
+```bash
+# 生成迁移文件
+pnpm exec mikro-orm migration:create
+
+# 执行迁移
+pnpm exec mikro-orm migration:up
 ```
 
 ### 添加新的 Workflow

@@ -68,7 +68,10 @@
       "Bash(ping -c 3 36.139.149.26)",
       "Bash(awk '{print $1}')",
       "Bash(xargs -r docker stop)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(pg_isready -h localhost -p 5432)",
+      "Bash(docker exec huimeng-postgres:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

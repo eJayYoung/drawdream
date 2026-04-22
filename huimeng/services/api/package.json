@@ -10,7 +10,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "db:migrate": "pnpm exec mikro-orm migration:run",
+    "db:migrate": "pnpm exec mikro-orm migration:up",
     "db:create": "pnpm exec mikro-orm schema:create --run",
     "db:update": "pnpm exec mikro-orm schema:update --run",
     "db:drop": "pnpm exec mikro-orm schema:drop --run",
