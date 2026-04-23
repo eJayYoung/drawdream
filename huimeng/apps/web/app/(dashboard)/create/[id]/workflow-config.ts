@@ -43,7 +43,7 @@ const stepDefinitions: Omit<WorkflowStep, "enabled" | "status">[] = [
   {
     id: "episodes",
     title: "智能分集",
-    description: "将剧本拆分为多个剧集结构",
+    description: "将剧本拆分为多个分集结构",
     icon: Layers,
   },
   {

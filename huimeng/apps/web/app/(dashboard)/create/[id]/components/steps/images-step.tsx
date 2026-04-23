@@ -2,13 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  CheckSquare,
   Circle,
   Clapperboard,
   Image as ImageIcon,
   Loader2,
   Plus,
   Sparkles,
+  Square,
   Trash2,
+  Wand2,
   X,
 } from "lucide-react";
 import { ErrorBanner } from "../error-banner";
@@ -67,6 +70,17 @@ type ReferenceImageDraft = {
   id: string;
   name: string;
   dataUrl: string;
+};
+
+type AiKeyframeSuggestion = {
+  id: string;
+  label: string;
+  timeSeconds: number;
+  frameNumber: number;
+  fps: number;
+  prompt: string;
+  notes: string;
+  previewVariant: KeyframeVariant | null;
 };
 
 const getToken = () => {
@@ -198,6 +212,9 @@ const readFileAsDataUrl = (file: File) =>
 
 const formatTimelineTime = (value: number) => `${value.toFixed(2)}s`;
 
+const buildAiSuggestionCount = (durationSeconds: number) =>
+  Math.min(5, Math.max(3, Math.round(durationSeconds)));
+
 const buildGenerationPrompt = (
   storyboard: StoryboardSource,
   point: KeyframePoint,
@@ -215,6 +232,26 @@ const buildGenerationPrompt = (
     prompt,
     notes ? `人物状态与站位 ${notes}` : "",
     "cinematic storyboard keyframe, clear staging, dramatic composition, consistent characters",
+  ]
+    .filter(Boolean)
+    .join("，");
+
+const buildAiSuggestionPrompt = (
+  storyboard: StoryboardSource,
+  label: string,
+  timeSeconds: number,
+  phase: string,
+) =>
+  [
+    storyboard.imagePrompt,
+    storyboard.sceneLabel ? `场景 ${storyboard.sceneLabel}` : "",
+    storyboard.shotType ? `景别 ${storyboard.shotType}` : "",
+    storyboard.beat ? `剧情节拍 ${storyboard.beat}` : "",
+    storyboard.action ? `镜头动作 ${storyboard.action}` : "",
+    label,
+    `时间点 ${formatTimelineTime(timeSeconds)}`,
+    phase,
+    "cinematic storyboard keyframe, strong staging, consistent characters, clear pose",
   ]
     .filter(Boolean)
     .join("，");
@@ -271,6 +308,14 @@ export function ImagesStep() {
   );
   const [uploadingReferences, setUploadingReferences] = useState(false);
   const [submittingGeneration, setSubmittingGeneration] = useState(false);
+  const [aiKeyframeOpen, setAiKeyframeOpen] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<AiKeyframeSuggestion[]>(
+    [],
+  );
+  const [selectedAiSuggestionIds, setSelectedAiSuggestionIds] = useState<
+    string[]
+  >([]);
 
   useEffect(() => {
     const hasGenerating = keyframePoints.some((point) =>
@@ -408,19 +453,92 @@ export function ImagesStep() {
       );
 
       if (!response.ok) {
-        throw new Error("读取关键帧任务状态失败。");
+        throw new Error("读取关键帧任务状态失败");
       }
 
       const data = await response.json();
       if (data.status === "completed") return data;
       if (data.status === "failed") {
-        throw new Error(data.error || "关键帧生成失败。");
+        throw new Error(data.error || "关键帧生成失败");
       }
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    throw new Error("关键帧生成超时，请稍后重试。");
+    throw new Error("关键帧生成超时，请稍后重试");
+  };
+
+  const generateImageVariant = async ({
+    token,
+    prompt,
+    negativePrompt,
+    referenceImages,
+    filenamePrefix,
+  }: {
+    token: string;
+    prompt: string;
+    negativePrompt: string;
+    referenceImages: string[];
+    filenamePrefix: string;
+  }) => {
+    const taskType =
+      referenceImages.length > 1
+        ? "multi_ref_image"
+        : referenceImages.length === 1
+          ? "scene_image_ref"
+          : project?.aspectRatio === "9:16"
+            ? "scene_image_portrait"
+            : "scene_image_landscape";
+
+    const inputParams: Record<string, unknown> =
+      taskType === "multi_ref_image"
+        ? {
+            reference_images: referenceImages,
+            prompt,
+            negative_prompt: negativePrompt,
+            filename_prefix: filenamePrefix,
+          }
+        : taskType === "scene_image_ref"
+          ? {
+              reference_image: referenceImages[0],
+              prompt,
+              negative_prompt: negativePrompt,
+              filename_prefix: filenamePrefix,
+            }
+          : {
+              prompt,
+              negative_prompt: negativePrompt,
+              filename_prefix: filenamePrefix,
+            };
+
+    const queueResponse = await fetch(`${API_URL}/api/generation/queue`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        projectId,
+        taskType,
+        inputParams,
+      }),
+    });
+
+    if (!queueResponse.ok) {
+      throw new Error("提交关键帧任务失败");
+    }
+
+    const queuedTask = await queueResponse.json();
+    const completedTask = await waitForTaskCompletion(queuedTask.taskId, token);
+    const images = extractTaskImages(completedTask.outputResult);
+    if (images.length === 0) {
+      throw new Error("任务已完成，但没有返回图片");
+    }
+
+    return {
+      taskId: queuedTask.taskId || "",
+      imageUrl: images[0],
+    };
   };
 
   const handleTimelineClick = async (
@@ -497,11 +615,282 @@ export function ImagesStep() {
 
   const openGenerator = () => {
     if (!selectedPoint) {
-      setError("请先在时间轴上选中一个关键帧点。");
+      setError("请先在时间轴上选中一个关键帧点");
       return;
     }
     clearError();
     setGeneratorOpen(true);
+  };
+
+  const openAiKeyframeGenerator = () => {
+    if (!selectedStoryboard) {
+      setError("请先选择一个分镜");
+      return;
+    }
+    clearError();
+    setAiSuggestions([]);
+    setSelectedAiSuggestionIds([]);
+    setAiKeyframeOpen(true);
+  };
+
+  const handleToggleAiSuggestion = (suggestionId: string) => {
+    setSelectedAiSuggestionIds((current) =>
+      current.includes(suggestionId)
+        ? current.filter((id) => id !== suggestionId)
+        : [...current, suggestionId],
+    );
+  };
+
+  const handleToggleAllAiSuggestions = () => {
+    if (
+      aiSuggestions.length > 0 &&
+      aiSuggestions.every((suggestion) =>
+        selectedAiSuggestionIds.includes(suggestion.id),
+      )
+    ) {
+      setSelectedAiSuggestionIds([]);
+      return;
+    }
+
+    setSelectedAiSuggestionIds(
+      aiSuggestions.map((suggestion) => suggestion.id),
+    );
+  };
+
+  const handleGenerateAiSuggestions = async () => {
+    if (!projectId || !selectedStoryboard) return;
+
+    const token = getToken();
+    if (!token) {
+      setError("登录状态已失效，请重新登录");
+      return;
+    }
+
+    const suggestionCount = buildAiSuggestionCount(
+      selectedStoryboard.durationSeconds,
+    );
+    const phaseLabels = ["开场", "推进", "冲突", "高潮", "收束"];
+    const now = new Date().toISOString();
+    const baseSuggestions: AiKeyframeSuggestion[] = Array.from(
+      { length: suggestionCount },
+      (_, index) => {
+        const ratio = (index + 1) / (suggestionCount + 1);
+        const timeSeconds = Number(
+          (selectedStoryboard.durationSeconds * ratio).toFixed(2),
+        );
+        const frameNumber = Math.max(1, Math.round(timeSeconds * effectiveFps));
+        const label = `AI关键帧 ${index + 1}`;
+        const phase = phaseLabels[index] || "情节节点";
+        const prompt = buildAiSuggestionPrompt(
+          selectedStoryboard,
+          label,
+          timeSeconds,
+          phase,
+        );
+
+        return {
+          id: `ai-suggestion-${Date.now()}-${index}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`,
+          label,
+          timeSeconds,
+          frameNumber,
+          fps: effectiveFps,
+          prompt,
+          notes: `${phase}，人物状态与站位发生变化`,
+          previewVariant: {
+            id: `ai-variant-${Date.now()}-${index}`,
+            title: `${label} 预览图`,
+            imageUrl: "",
+            status: "running",
+            taskId: "",
+            prompt,
+            error: "",
+            createdAt: now,
+          },
+        };
+      },
+    );
+
+    setAiGenerating(true);
+    setAiSuggestions(baseSuggestions);
+    setSelectedAiSuggestionIds(
+      baseSuggestions.map((suggestion) => suggestion.id),
+    );
+
+    const baseReferenceImages = uniqueList(
+      [selectedStoryboard.imageUrl].filter(Boolean),
+    );
+
+    try {
+      const resolvedSuggestions = await Promise.all(
+        baseSuggestions.map(async (suggestion, index) => {
+          try {
+            const taskType =
+              baseReferenceImages.length > 1
+                ? "multi_ref_image"
+                : baseReferenceImages.length === 1
+                  ? "scene_image_ref"
+                  : project?.aspectRatio === "9:16"
+                    ? "scene_image_portrait"
+                    : "scene_image_landscape";
+
+            const inputParams: Record<string, unknown> =
+              taskType === "multi_ref_image"
+                ? {
+                    reference_images: baseReferenceImages,
+                    prompt: suggestion.prompt,
+                    negative_prompt:
+                      selectedStoryboard.negativePrompt ||
+                      DEFAULT_NEGATIVE_PROMPT,
+                    filename_prefix: `huimeng/ai-keyframe/${selectedStoryboard.id}/${suggestion.frameNumber}-${index}`,
+                  }
+                : taskType === "scene_image_ref"
+                  ? {
+                      reference_image: baseReferenceImages[0],
+                      prompt: suggestion.prompt,
+                      negative_prompt:
+                        selectedStoryboard.negativePrompt ||
+                        DEFAULT_NEGATIVE_PROMPT,
+                      filename_prefix: `huimeng/ai-keyframe/${selectedStoryboard.id}/${suggestion.frameNumber}-${index}`,
+                    }
+                  : {
+                      prompt: suggestion.prompt,
+                      negative_prompt:
+                        selectedStoryboard.negativePrompt ||
+                        DEFAULT_NEGATIVE_PROMPT,
+                      filename_prefix: `huimeng/ai-keyframe/${selectedStoryboard.id}/${suggestion.frameNumber}-${index}`,
+                    };
+
+            const queueResponse = await fetch(
+              `${API_URL}/api/generation/queue`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  projectId,
+                  taskType,
+                  inputParams,
+                }),
+              },
+            );
+
+            if (!queueResponse.ok) {
+              throw new Error("AI关键帧建议生成失败");
+            }
+
+            const queuedTask = await queueResponse.json();
+            const completedTask = await waitForTaskCompletion(
+              queuedTask.taskId,
+              token,
+            );
+            const images = extractTaskImages(completedTask.outputResult);
+            if (images.length === 0) {
+              throw new Error("AI关键帧建议没有返回图片");
+            }
+
+            return {
+              ...suggestion,
+              previewVariant: suggestion.previewVariant
+                ? {
+                    ...suggestion.previewVariant,
+                    imageUrl: images[0],
+                    taskId: queuedTask.taskId || "",
+                    status: "completed" as const,
+                  }
+                : null,
+            };
+          } catch (generateError: any) {
+            return {
+              ...suggestion,
+              previewVariant: suggestion.previewVariant
+                ? {
+                    ...suggestion.previewVariant,
+                    status: "failed" as const,
+                    error: generateError.message || "AI关键帧图片生成失败",
+                  }
+                : null,
+            };
+          }
+        }),
+      );
+
+      setAiSuggestions(resolvedSuggestions);
+      setSelectedAiSuggestionIds(
+        resolvedSuggestions
+          .filter((suggestion) => suggestion.previewVariant?.imageUrl)
+          .map((suggestion) => suggestion.id),
+      );
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const handleSaveAiSuggestions = async () => {
+    if (!selectedStoryboard) return;
+
+    const pickedSuggestions = aiSuggestions.filter((suggestion) =>
+      selectedAiSuggestionIds.includes(suggestion.id),
+    );
+    if (pickedSuggestions.length === 0) {
+      setError("请至少选择一个关键帧建议再插入");
+      return;
+    }
+
+    const latestPoints = getLatestKeyframePoints();
+    const usedFrames = new Set(
+      latestPoints
+        .filter((point) => point.storyboardId === selectedStoryboard.id)
+        .map((point) => point.frameNumber),
+    );
+
+    const nextPoints: KeyframePoint[] = pickedSuggestions.map(
+      (suggestion, index) => {
+        let frameNumber = suggestion.frameNumber;
+        while (usedFrames.has(frameNumber)) {
+          frameNumber += 1;
+        }
+        usedFrames.add(frameNumber);
+
+        const safeTimeSeconds = Math.min(
+          Number((frameNumber / suggestion.fps).toFixed(2)),
+          selectedStoryboard.durationSeconds,
+        );
+        const createdAt = new Date().toISOString();
+        const previewVariant = suggestion.previewVariant;
+
+        return {
+          type: "keyframe_point",
+          id: `keyframe-point-${Date.now()}-${index}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`,
+          storyboardId: selectedStoryboard.id,
+          storyboardTitle: selectedStoryboard.title,
+          label: suggestion.label,
+          timeSeconds: safeTimeSeconds,
+          frameNumber,
+          fps: suggestion.fps,
+          prompt: suggestion.prompt,
+          notes: suggestion.notes,
+          generateCount: 1,
+          selectedVariantId: previewVariant?.imageUrl
+            ? previewVariant.id
+            : null,
+          variants: previewVariant ? [previewVariant] : [],
+          createdAt,
+          updatedAt: createdAt,
+        };
+      },
+    );
+
+    await syncKeyframePoints([...latestPoints, ...nextPoints], true);
+    setAiKeyframeOpen(false);
+    setAiSuggestions([]);
+    setSelectedAiSuggestionIds([]);
+    setSelectedPointId(nextPoints[0]?.id || null);
   };
 
   const handleReferenceUpload = async (
@@ -522,7 +911,7 @@ export function ImagesStep() {
 
       setReferenceDrafts((current) => [...current, ...nextDrafts].slice(0, 3));
     } catch (uploadError: any) {
-      setError(uploadError.message || "参考图读取失败。");
+      setError(uploadError.message || "参考图读取失败");
     } finally {
       setUploadingReferences(false);
       event.target.value = "";
@@ -540,13 +929,13 @@ export function ImagesStep() {
 
     const token = getToken();
     if (!token) {
-      setError("登录状态已失效，请重新登录。");
+      setError("登录状态已失效，请重新登录");
       return;
     }
 
     const sanitizedPrompt = sanitizeText(generatorPrompt);
     if (!sanitizedPrompt) {
-      setError("请先填写关键帧提示词。");
+      setError("请先填写关键帧提示词");
       return;
     }
 
@@ -657,7 +1046,7 @@ export function ImagesStep() {
         });
 
         if (!queueResponse.ok) {
-          throw new Error("提交关键帧任务失败。");
+          throw new Error("提交关键帧任务失败");
         }
 
         const queuedTask = await queueResponse.json();
@@ -688,7 +1077,7 @@ export function ImagesStep() {
         );
         const images = extractTaskImages(completedTask.outputResult);
         if (images.length === 0) {
-          throw new Error("任务已完成，但没有返回图片。");
+          throw new Error("任务已完成，但没有返回图片");
         }
 
         await syncKeyframePoints(
@@ -723,7 +1112,7 @@ export function ImagesStep() {
                       ? {
                           ...variant,
                           status: "failed",
-                          error: submitError.message || "关键帧生成失败。",
+                          error: submitError.message || "关键帧生成失败",
                         }
                       : variant,
                   ),
@@ -733,7 +1122,7 @@ export function ImagesStep() {
           ),
           true,
         );
-        setError(submitError.message || "关键帧生成失败。");
+        setError(submitError.message || "关键帧生成失败");
       }
     };
 
@@ -767,7 +1156,7 @@ export function ImagesStep() {
     const hasAssets = selectedPoint.variants.length > 0;
     if (
       hasAssets &&
-      !window.confirm("这个关键帧点下面已经有关联图片，确认删除吗？")
+      !window.confirm("这个关键帧点下已经有关联图片，确认删除吗？")
     ) {
       return;
     }
@@ -840,7 +1229,7 @@ export function ImagesStep() {
                       />
                     ) : (
                       <div className="flex h-[70px] w-24 flex-shrink-0 items-center justify-center rounded-md bg-muted text-[11px] text-muted-foreground">
-                        未生成分镜图
+                        暂无分镜图
                       </div>
                     )}
 
@@ -889,19 +1278,29 @@ export function ImagesStep() {
               </div>
             </div>
             {selectedStoryboard ? (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>FPS</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={60}
-                  value={effectiveFps}
-                  onChange={(event) =>
-                    void handleFpsChange(Number(event.target.value || 1))
-                  }
-                  className="w-20 rounded-lg border px-3 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openAiKeyframeGenerator}
+                  className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm hover:bg-muted"
+                >
+                  <Wand2 size={14} />
+                  AI生成关键帧
+                </button>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>FPS</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={effectiveFps}
+                    onChange={(event) =>
+                      void handleFpsChange(Number(event.target.value || 1))
+                    }
+                    className="w-20 rounded-lg border px-3 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </label>
+              </div>
             ) : null}
           </div>
 
@@ -1000,7 +1399,7 @@ export function ImagesStep() {
                             {selectedPoint.label}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {formatTimelineTime(selectedPoint.timeSeconds)} · 第{" "}
+                            {formatTimelineTime(selectedPoint.timeSeconds)} · 第
                             {selectedPoint.frameNumber} 帧
                           </div>
                         </div>
@@ -1165,6 +1564,185 @@ export function ImagesStep() {
         </div>
       </div>
 
+      {aiKeyframeOpen && selectedStoryboard ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <div>
+                <div className="text-base font-semibold">AI生成关键帧</div>
+                <div className="text-sm text-muted-foreground">
+                  生成多个关键帧节点位置和预览资产，勾选后保存插入时间轴
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiKeyframeOpen(false)}
+                className="rounded-lg p-2 hover:bg-muted"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
+              <div className="overflow-auto border-r p-5">
+                <div className="space-y-4">
+                  <div className="rounded-xl border p-4 text-sm">
+                    <div className="font-medium">
+                      {selectedStoryboard.title}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {selectedStoryboard.durationSeconds}s · {effectiveFps}fps
+                      · {selectedStoryboard.sceneLabel}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      {selectedStoryboard.beat ||
+                        selectedStoryboard.action ||
+                        "当前分镜还没有补充剧情节拍"}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateAiSuggestions()}
+                    disabled={aiGenerating}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  >
+                    {aiGenerating ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        AI生成中...{" "}
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 size={16} />
+                        开始AI生成
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleAllAiSuggestions}
+                    disabled={aiSuggestions.length === 0}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                  >
+                    {aiSuggestions.length > 0 &&
+                    aiSuggestions.every((suggestion) =>
+                      selectedAiSuggestionIds.includes(suggestion.id),
+                    ) ? (
+                      <CheckSquare size={16} />
+                    ) : (
+                      <Square size={16} />
+                    )}
+                    全选 / 取消全选
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveAiSuggestions()}
+                    disabled={selectedAiSuggestionIds.length === 0}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                  >
+                    <Plus size={16} />
+                    保存插入关键帧
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-auto p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-sm font-medium">AI关键帧建议</div>
+                  <div className="text-xs text-muted-foreground">
+                    {aiSuggestions.length > 0
+                      ? `${aiSuggestions.length} 个建议节点`
+                      : "还没有生成建议"}
+                  </div>
+                </div>
+
+                {aiSuggestions.length > 0 ? (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {aiSuggestions.map((suggestion) => {
+                      const selected = selectedAiSuggestionIds.includes(
+                        suggestion.id,
+                      );
+                      const status =
+                        suggestion.previewVariant?.status || "queued";
+                      const imageUrl =
+                        suggestion.previewVariant?.imageUrl || "";
+
+                      return (
+                        <div
+                          key={suggestion.id}
+                          className={`rounded-xl border p-3 ${
+                            selected ? "border-primary bg-primary/5" : ""
+                          }`}
+                        >
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-sm font-medium">
+                                {suggestion.label}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatTimelineTime(suggestion.timeSeconds)} ·
+                                第{suggestion.frameNumber} 帧{" "}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleToggleAiSuggestion(suggestion.id)
+                              }
+                              className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                            >
+                              {selected ? (
+                                <CheckSquare size={18} />
+                              ) : (
+                                <Square size={18} />
+                              )}
+                            </button>
+                          </div>
+
+                          <div className="mb-3 aspect-video overflow-hidden rounded-lg bg-muted">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt={suggestion.label}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : status === "queued" || status === "running" ? (
+                              <div className="flex h-full items-center justify-center text-muted-foreground">
+                                <div className="flex flex-col items-center gap-2 text-sm">
+                                  <Loader2 size={22} className="animate-spin" />
+                                  <span>生成中...</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                                {suggestion.previewVariant?.error || "生成失败"}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="line-clamp-3 text-xs text-muted-foreground">
+                            {suggestion.notes}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex min-h-[320px] items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <Wand2 size={44} className="mx-auto mb-3 opacity-50" />
+                      <p>点击左侧按钮，AI会先生成一批关键帧建议。</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {generatorOpen && selectedStoryboard && selectedPoint ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
           <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
@@ -1173,7 +1751,7 @@ export function ImagesStep() {
                 <div className="text-base font-semibold">生成关键帧图片</div>
                 <div className="text-sm text-muted-foreground">
                   {selectedPoint.label} ·{" "}
-                  {formatTimelineTime(selectedPoint.timeSeconds)} · 第{" "}
+                  {formatTimelineTime(selectedPoint.timeSeconds)} · 第
                   {selectedPoint.frameNumber} 帧
                 </div>
               </div>
@@ -1281,7 +1859,7 @@ export function ImagesStep() {
                     {submittingGeneration ? (
                       <>
                         <Loader2 size={16} className="animate-spin" />
-                        生成中
+                        生成中...
                       </>
                     ) : (
                       <>
@@ -1359,6 +1937,10 @@ export function ImagesStep() {
                             >
                               {active ? "已绑定" : "选择并绑定"}
                             </button>
+                          </div>
+
+                          <div className="mt-2 line-clamp-3 text-xs text-muted-foreground">
+                            {variant.prompt}
                           </div>
                         </div>
                       );
