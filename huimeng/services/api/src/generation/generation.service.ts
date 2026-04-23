@@ -1,550 +1,331 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { v4 as uuidv4 } from "uuid";
+import { ConfigService } from "@nestjs/config";
+import axios from "axios";
 import { ComfyUIService } from "../common/comfyui.service";
-import {
-  WorkflowTemplateService,
-  CharacterImageParams,
-  SceneImageParams,
-  SceneImageRefParams,
-  MultiRefImageParams,
-  FluxMultiRefImageParams,
-  VideoGenerationParams,
-  VideoLongShotParams,
-  MultiAngleCameraParams,
-} from "../common/workflow-template.service";
+import { OssService } from "../common/oss.service";
+import { WorkflowTemplateService } from "../common/workflow-template.service";
 import { GenerationGateway } from "./generation.gateway";
+import { ProjectService } from "../project/project.service";
 
-export interface GenerationTask {
-  id: string;
+interface PollState {
+  userId: string;
   projectId: string;
   taskType: string;
-  status: "queued" | "running" | "completed" | "failed";
-  progress: number;
-  inputParams: Record<string, unknown>;
-  outputResult?: Record<string, unknown>;
-  error?: string;
-  createdAt: Date;
-  completedAt?: Date;
+  episodeId?: string;
+  storyboardId?: string;
 }
 
-// 输入图片到 ComfyUI 服务器的映射
-interface UploadedImages {
-  [key: string]: string; // localPath -> remoteFilename
+/** 提交生成任务的参数 */
+export interface QueueTaskParams {
+  userId: string;
+  projectId: string;
+  taskType: string;
+  prompt: string;
+  inputParams: Record<string, unknown>;
+  episodeId?: string;
+  storyboardId?: string;
 }
 
 @Injectable()
 export class GenerationService {
   private readonly logger = new Logger(GenerationService.name);
-  private tasks: Map<string, GenerationTask> = new Map();
-  private uploadedImagesCache: Map<string, UploadedImages> = new Map();
+
+  // 轮询配置: 60分钟超时 @ 2s 间隔 = 1800 次
+  private readonly POLL_INTERVAL_MS = 2000;
+  private readonly MAX_POLL_ATTEMPTS = 1800;
 
   constructor(
     private readonly comfyUIService: ComfyUIService,
+    private readonly ossService: OssService,
     private readonly workflowTemplateService: WorkflowTemplateService,
     private readonly generationGateway: GenerationGateway,
+    private readonly configService: ConfigService,
+    private readonly projectService: ProjectService,
   ) {}
 
   /**
-   * 创建生成任务
+   * 根据 aspectRatio 计算 view_width 和 view_height
+   * 16:9 → 1280x720
+   * 9:16 → 720x1280
    */
-  async queueTask(
-    userId: string,
-    projectId: string,
-    taskType: string,
-    inputParams: Record<string, unknown>,
-    episodeId?: string,
-    storyboardId?: string,
-  ): Promise<GenerationTask> {
-    const task: GenerationTask = {
-      id: uuidv4(),
-      projectId,
-      taskType,
-      status: "queued",
-      progress: 0,
-      inputParams,
-      createdAt: new Date(),
-    };
-
-    this.tasks.set(task.id, task);
-    this.logger.log(`Task ${task.id} queued: ${taskType}`);
-
-    // 异步处理任务
-    this.processTask(task.id).catch((err) => {
-      this.logger.error(`Task ${task.id} failed: ${err.message}`);
-    });
-
-    return task;
-  }
-
-  private async processTask(taskId: string): Promise<void> {
-    const task = this.tasks.get(taskId);
-    if (!task) return;
-
-    task.status = "running";
-    task.progress = 0;
-
-    try {
-      switch (task.taskType) {
-        case "character_image":
-          await this.generateCharacterImage(task);
-          break;
-        case "character_image_v2":
-          await this.generateCharacterImageV2(task);
-          break;
-        case "scene_image_portrait":
-          await this.generateSceneImagePortrait(task);
-          break;
-        case "scene_image_landscape":
-          await this.generateSceneImageLandscape(task);
-          break;
-        case "scene_image_ref":
-          await this.generateSceneImageRef(task);
-          break;
-        case "multi_ref_image":
-          await this.generateMultiRefImage(task);
-          break;
-        case "flux_multi_ref_image":
-          await this.generateFluxMultiRefImage(task);
-          break;
-        case "video_generation":
-          await this.generateVideo(task);
-          break;
-        case "video_long_shot":
-          await this.generateVideoLongShot(task);
-          break;
-        case "multi_angle_camera":
-          await this.generateMultiAngleCamera(task);
-          break;
-        default:
-          throw new Error(`Unknown task type: ${task.taskType}`);
-      }
-
-      task.status = "completed";
-      task.progress = 100;
-      task.completedAt = new Date();
-      this.logger.log(`Task ${taskId} completed`);
-    } catch (error: any) {
-      task.status = "failed";
-      task.error = error.message;
-      task.completedAt = new Date();
-      this.logger.error(`Task ${taskId} failed: ${error.message}`);
+  private getViewDimensions(aspectRatio: string): { view_width: string; view_height: string } {
+    switch (aspectRatio) {
+      case "16:9":
+        return { view_width: "1280", view_height: "720" };
+      case "9:16":
+        return { view_width: "720", view_height: "1280" };
+      default:
+        // 默认 16:9
+        return { view_width: "1280", view_height: "720" };
     }
-
-    // 通过 WebSocket 通知客户端
-    this.generationGateway.notifyProjectProgress(task.projectId, {
-      taskId: task.id,
-      status: task.status,
-      progress: task.progress,
-      outputResult: task.outputResult,
-      error: task.error,
-    });
   }
 
   /**
-   * 上传图片到 ComfyUI 服务器
+   * 根据 taskType 组装 inputParams
    */
-  private async uploadImagesToComfyUI(
-    imagePaths: string[],
-    projectId: string,
-  ): Promise<UploadedImages> {
-    const cacheKey = `${projectId}-${imagePaths.sort().join(",")}`;
-    if (this.uploadedImagesCache.has(cacheKey)) {
-      return this.uploadedImagesCache.get(cacheKey)!;
+  private buildInputParams(taskType: string, prompt: string, inputParams: Record<string, unknown>, view_width: string, view_height: string): object {
+    switch (taskType) {
+      case "createRolePicture-t2i":
+        return {
+          prompt,
+          ...inputParams,
+        };
+      default:
+        // 默认直接传递 inputParams
+        return {
+          prompt,
+          ...inputParams,
+          view_width,
+          view_height,
+        };
+    }
+  }
+
+  /**
+   * 提交生成任务到队列
+   * BFF 模式: 调用远程 /api/render/call 后立即返回 taskId，后台轮询状态
+   */
+  async queueTask(params: QueueTaskParams): Promise<{ id: string; status: string }> {
+    const { userId, projectId, taskType, prompt, inputParams, episodeId, storyboardId } = params;
+    // 1. 获取项目信息，用于计算 view_width 和 view_height
+    let project: any;
+    try {
+      project = await this.projectService.findById(projectId);
+    } catch (error: any) {
+      this.logger.warn(`Failed to get project ${projectId}: ${error.message}, using default dimensions`);
     }
 
-    const uploaded: UploadedImages = {};
+    // 2. 根据 aspectRatio 计算 view dimensions
+    const aspectRatio = project?.aspectRatio || "16:9";
+    const { view_width, view_height } = this.getViewDimensions(aspectRatio);
 
-    for (const imagePath of imagePaths) {
-      if (imagePath.startsWith("http") || uploaded[imagePath]) {
-        continue;
+    // 3. 根据 taskType 组装 workflow 参数
+    const workflow = this.buildInputParams(taskType, prompt, inputParams, view_width, view_height);
+
+    // 4. 提交到 ComfyUI 远程服务
+    let comfyTaskId: string;
+    try {
+      const submitResult = await this.comfyUIService.submitTask(taskType, prompt, workflow);
+      comfyTaskId = submitResult.prompt_id;
+      this.logger.log(`Task submitted to ComfyUI, taskId: ${comfyTaskId}, projectId: ${projectId}, type: ${taskType}, aspectRatio: ${aspectRatio}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to submit task: ${error.message}`);
+      throw error;
+    }
+
+    // 5. 启动后台轮询（不阻塞响应）
+    const pollState: PollState = {
+      userId,
+      projectId,
+      taskType,
+      episodeId,
+      storyboardId,
+    };
+
+    this.pollTaskStatus(comfyTaskId, pollState);
+
+    // 6. 立即返回 ComfyUI 的 taskId
+    return { id: comfyTaskId, status: "queued" };
+  }
+
+  /**
+   * 后台轮询任务状态
+   * 纯 BFF: 不存储任务状态，只负责轮询和推送 WebSocket
+   */
+  private async pollTaskStatus(comfyTaskId: string, state: PollState): Promise<void> {
+    let attempts = 0;
+
+    const poll = async (): Promise<void> => {
+      attempts++;
+
+      if (attempts >= this.MAX_POLL_ATTEMPTS) {
+        this.generationGateway.notifyTaskUpdate(state.userId, {
+          taskId: comfyTaskId,
+          status: "failed",
+          progress: 100,
+          outputs: { error: "Timeout: task execution exceeded 60 minutes" },
+        });
+        this.generationGateway.notifyProjectProgress(state.projectId, {
+          taskId: comfyTaskId,
+          episodeId: state.episodeId,
+          storyboardId: state.storyboardId,
+          status: "failed",
+          progress: 100,
+          error: "Timeout",
+        });
+        this.logger.error(`Task ${comfyTaskId} timed out after ${attempts} attempts`);
+        return;
       }
 
       try {
-        if (imagePath.startsWith("data:image/")) {
-          const matched = imagePath.match(
-            /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/,
-          );
-          if (!matched) {
-            this.logger.warn(`Invalid data URL image, skipping upload`);
-            continue;
-          }
+        const result = await this.comfyUIService.getHistory(comfyTaskId);
+        this.logger.log(`Task ${comfyTaskId} poll attempt ${attempts}: status=${result.status}`);
 
-          const mimeType = matched[1];
-          const base64Data = matched[2];
-          const extension =
-            mimeType.split("/")[1]?.replace("jpeg", "jpg") || "png";
-          const filename = `upload-${projectId}-${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2, 8)}.${extension}`;
-          const buffer = Buffer.from(base64Data, "base64");
+        if (result.status === "success") {
+          // 获取资产并上传 OSS
+          console.log(`[ComfyUI Images] ${JSON.stringify(result.images)}`);
+          const assetUrls = await this.fetchAndUploadAssets(result.images || []);
+          this.generationGateway.notifyTaskUpdate(state.userId, {
+            taskId: comfyTaskId,
+            status: "completed",
+            progress: 100,
+            outputs: { assets: assetUrls },
+          });
+          this.generationGateway.notifyProjectProgress(state.projectId, {
+            taskId: comfyTaskId,
+            episodeId: state.episodeId,
+            storyboardId: state.storyboardId,
+            status: "completed",
+            progress: 100,
+            outputResult: { assets: assetUrls },
+          });
+          this.logger.log(`Task ${comfyTaskId} completed with ${assetUrls.length} assets`);
 
-          await this.comfyUIService.uploadImage(buffer, filename);
-          uploaded[imagePath] = filename;
-          this.logger.log(`Uploaded data URL image: ${filename}`);
-          continue;
-        }
+        } else if (result.status === "failed") {
+          this.generationGateway.notifyTaskUpdate(state.userId, {
+            taskId: comfyTaskId,
+            status: "failed",
+            progress: 100,
+            outputs: { error: result.error },
+          });
+          this.generationGateway.notifyProjectProgress(state.projectId, {
+            taskId: comfyTaskId,
+            episodeId: state.episodeId,
+            storyboardId: state.storyboardId,
+            status: "failed",
+            progress: 100,
+            error: result.error,
+          });
+          this.logger.error(`Task ${comfyTaskId} failed: ${result.error}`);
 
-        // 如果是本地文件路径，读取并上传
-        const fs = await import("fs");
-        const path = await import("path");
-
-        let buffer: Buffer;
-        if (fs.existsSync(imagePath)) {
-          buffer = fs.readFileSync(imagePath);
-        } else if (fs.existsSync(path.join(process.cwd(), imagePath))) {
-          buffer = fs.readFileSync(path.join(process.cwd(), imagePath));
         } else {
-          this.logger.warn(
-            `Image file not found: ${imagePath}, skipping upload`,
-          );
-          continue;
+          // pending/running - 继续轮询
+          const progress = Math.min(90, Math.floor((attempts / this.MAX_POLL_ATTEMPTS) * 90));
+          this.generationGateway.notifyTaskUpdate(state.userId, {
+            taskId: comfyTaskId,
+            status: "running",
+            progress,
+          });
+          this.generationGateway.notifyProjectProgress(state.projectId, {
+            taskId: comfyTaskId,
+            episodeId: state.episodeId,
+            storyboardId: state.storyboardId,
+            status: "running",
+            progress,
+          });
+          setTimeout(poll, this.POLL_INTERVAL_MS);
         }
-
-        const filename = path.basename(imagePath);
-        await this.comfyUIService.uploadImage(buffer, filename);
-        uploaded[imagePath] = filename;
-        this.logger.log(`Uploaded image: ${filename}`);
       } catch (error: any) {
-        this.logger.warn(
-          `Failed to upload image ${imagePath}: ${error.message}`,
-        );
+        this.logger.error(`Poll error for task ${comfyTaskId}: ${error.message}`);
+        // 网络错误继续重试
+        setTimeout(poll, this.POLL_INTERVAL_MS);
+      }
+    };
+
+    // 启动首次轮询
+    poll();
+  }
+
+  /**
+   * 获取资产文件并上传到 OSS
+   */
+  private async fetchAndUploadAssets(assetIds: string[]): Promise<string[]> {
+    const urls: string[] = [];
+
+    for (const assetId of assetIds) {
+      try {
+        // 从 ComfyUI 服务器获取图片二进制
+        const assetResult = await this.fetchAssetFile(assetId);
+
+        if (assetResult.buffer) {
+          // 上传到 OSS
+          const filename = assetId.split("/").pop() || assetId;
+          const ossUrl = await this.ossService.uploadBuffer(
+            assetResult.buffer,
+            filename,
+            assetResult.contentType || "image/png",
+          );
+          urls.push(ossUrl);
+          
+          this.logger.log(`Asset ${assetId} uploaded to OSS: ${ossUrl}`);
+        }
+      } catch (error: any) {
+        this.logger.error(`Failed to fetch/upload asset ${assetId}: ${error.message}`);
       }
     }
 
-    this.uploadedImagesCache.set(cacheKey, uploaded);
-    return uploaded;
+    return urls;
   }
 
-  // ============ 角色图生成 ============
-
-  private async generateCharacterImage(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as unknown as CharacterImageParams;
-
-    const workflow = this.workflowTemplateService.getCharacterImageWorkflow({
-      positive_prompt: params.positive_prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      width: params.width,
-      height: params.height,
-      resolution: params.resolution,
-      filename_prefix: params.filename_prefix || `huimeng/character/${task.id}`,
-    });
-
-    this.logger.log(`Submitting character image task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
-  }
-
-  private async generateCharacterImageV2(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as any;
-
-    const workflow = this.workflowTemplateService.getCharacterImageV2Workflow({
-      positive_prompt: params.positive_prompt,
-      custom_prompt: params.custom_prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      filename_prefix:
-        params.filename_prefix || `huimeng/character_v2/${task.id}`,
-    });
-
-    this.logger.log(`Submitting character image v2 task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
-  }
-
-  // ============ 场景图生成 ============
-
-  private async generateSceneImagePortrait(
-    task: GenerationTask,
-  ): Promise<void> {
-    const params = task.inputParams as unknown as SceneImageParams;
-
-    const workflow = this.workflowTemplateService.getSceneImagePortraitWorkflow(
-      {
-        prompt: params.prompt,
-        negative_prompt: params.negative_prompt,
-        seed: params.seed,
-        steps: params.steps,
-        cfg: params.cfg,
-        sampler_name: params.sampler_name,
-        filename_prefix:
-          params.filename_prefix || `huimeng/scene_portrait/${task.id}`,
-      },
-    );
-
-    this.logger.log(`Submitting scene portrait task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
-  }
-
-  private async generateSceneImageLandscape(
-    task: GenerationTask,
-  ): Promise<void> {
-    const params = task.inputParams as unknown as SceneImageParams;
-
-    const workflow =
-      this.workflowTemplateService.getSceneImageLandscapeWorkflow({
-        prompt: params.prompt,
-        negative_prompt: params.negative_prompt,
-        seed: params.seed,
-        steps: params.steps,
-        cfg: params.cfg,
-        sampler_name: params.sampler_name,
-        filename_prefix:
-          params.filename_prefix || `huimeng/scene_landscape/${task.id}`,
+  /**
+   * 获取 ComfyUI 资产文件
+   */
+  private async fetchAssetFile(assetId: string): Promise<{ buffer?: Buffer; contentType?: string; error?: string }> {
+    try {
+      const host = this.configService.get<string>("COMFYUI_HOST", "36.138.102.196");
+      const port = this.configService.get<string>("COMFYUI_PORT", "8081");
+      const baseUrl = `http://${host}:${port}`;
+      // 打印资产Id和资产图片地址
+      console.log(`[Asset ID] ${assetId}`);
+      console.log(`[Asset URL] ${baseUrl}/api/asset/${assetId}/file`);
+      const response = await axios.get(`${baseUrl}/api/asset/${assetId}/file`, {
+        responseType: "arraybuffer",
+        timeout: 30000,
       });
 
-    this.logger.log(`Submitting scene landscape task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
-  }
-
-  private async generateSceneImageRef(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as unknown as SceneImageRefParams;
-
-    // 上传参考图
-    const uploaded = await this.uploadImagesToComfyUI(
-      [params.reference_image],
-      task.projectId,
-    );
-    const remoteImage =
-      uploaded[params.reference_image] || params.reference_image;
-
-    const workflow = this.workflowTemplateService.getSceneImageRefWorkflow({
-      reference_image: remoteImage,
-      reference_image_2: params.reference_image_2,
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      filename_prefix: params.filename_prefix || `huimeng/scene_ref/${task.id}`,
-    });
-
-    this.logger.log(`Submitting scene ref image task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
-  }
-
-  // ============ 多参考图生图 ============
-
-  private async generateMultiRefImage(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as unknown as MultiRefImageParams;
-
-    // 上传参考图
-    const uploaded = await this.uploadImagesToComfyUI(
-      params.reference_images,
-      task.projectId,
-    );
-    const remoteImages = params.reference_images.map(
-      (img) => uploaded[img] || img,
-    );
-
-    const workflow = this.workflowTemplateService.getMultiRefImageWorkflow({
-      reference_images: remoteImages,
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      filename_prefix: params.filename_prefix || `huimeng/multi_ref/${task.id}`,
-    });
-
-    this.logger.log(`Submitting multi-ref image task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
-  }
-
-  private async generateFluxMultiRefImage(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as unknown as FluxMultiRefImageParams;
-
-    // 上传参考图
-    const allImages = [...params.reference_images];
-    if (params.scene_reference) {
-      allImages.push(params.scene_reference);
+      const contentType = (response.headers["content-type"] as string) || "image/png";
+      return {
+        buffer: Buffer.from(response.data),
+        contentType,
+      };
+    } catch (error: any) {
+      this.logger.error(`Failed to get asset file: ${error.message}`);
+      return { error: error.message };
     }
-
-    const uploaded = await this.uploadImagesToComfyUI(
-      allImages,
-      task.projectId,
-    );
-    const remoteImages = params.reference_images.map(
-      (img) => uploaded[img] || img,
-    );
-
-    const workflow = this.workflowTemplateService.getFluxMultiRefImageWorkflow({
-      reference_images: remoteImages,
-      scene_reference: params.scene_reference
-        ? uploaded[params.scene_reference]
-        : undefined,
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      filename_prefix:
-        params.filename_prefix || `huimeng/flux_multi_ref/${task.id}`,
-    });
-
-    this.logger.log(
-      `Submitting Flux multi-ref image task ${task.id} to ComfyUI`,
-    );
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
   }
 
-  // ============ 视频生成 ============
+  // ============ 查询接口 - 代理到 ComfyUI ==========
 
-  private async generateVideo(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as unknown as VideoGenerationParams;
-
-    // 上传首尾帧
-    const uploaded = await this.uploadImagesToComfyUI(
-      [params.start_image, params.end_image],
-      task.projectId,
-    );
-
-    const workflow = this.workflowTemplateService.getVideoGenerationWorkflow({
-      start_image: uploaded[params.start_image] || params.start_image,
-      end_image: uploaded[params.end_image] || params.end_image,
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      fps: params.fps,
-      duration: params.duration,
-      width: params.width,
-      height: params.height,
-      resolution: params.resolution,
-      filename_prefix: params.filename_prefix || `huimeng/video/${task.id}`,
-    });
-
-    this.logger.log(`Submitting video generation task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const video = this.comfyUIService.extractVideoFromOutput(result.outputs);
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { video, images, prompt_id: task.id };
-  }
-
-  private async generateVideoLongShot(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as unknown as VideoLongShotParams;
-
-    // 上传所有帧
-    const allImages = [params.start_image, params.end_image];
-    if (params.middle_image) {
-      allImages.push(params.middle_image);
+  /**
+   * 获取任务状态
+   * 代理到 ComfyUI 的 /api/render/query 接口
+   */
+  async getTaskStatus(taskId: string): Promise<{ taskId: string; status: string; progress: number; outputs?: Record<string, unknown> } | null> {
+    try {
+      const result = await this.comfyUIService.getHistory(taskId);
+      return {
+        taskId,
+        status: result.status,
+        progress: result.status === "success" ? 100 : result.status === "failed" ? 100 : 0,
+        outputs: result.outputs,
+      };
+    } catch (error: any) {
+      this.logger.error(`Failed to get task status: ${error.message}`);
+      return null;
     }
-
-    const uploaded = await this.uploadImagesToComfyUI(
-      allImages,
-      task.projectId,
-    );
-
-    const workflow = this.workflowTemplateService.getVideoLongShotWorkflow({
-      start_image: uploaded[params.start_image] || params.start_image,
-      middle_image: params.middle_image
-        ? uploaded[params.middle_image] || params.middle_image
-        : undefined,
-      end_image: uploaded[params.end_image] || params.end_image,
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      fps: params.fps,
-      duration: params.duration,
-      width: params.width,
-      height: params.height,
-      resolution: params.resolution,
-      filename_prefix:
-        params.filename_prefix || `huimeng/video_long/${task.id}`,
-    });
-
-    this.logger.log(`Submitting video long shot task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const video = this.comfyUIService.extractVideoFromOutput(result.outputs);
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { video, images, prompt_id: task.id };
   }
 
-  private async generateMultiAngleCamera(task: GenerationTask): Promise<void> {
-    const params = task.inputParams as unknown as MultiAngleCameraParams;
-
-    // 上传源图片
-    const uploaded = await this.uploadImagesToComfyUI(
-      [params.source_image],
-      task.projectId,
-    );
-
-    const workflow = this.workflowTemplateService.getMultiAngleCameraWorkflow({
-      source_image: uploaded[params.source_image] || params.source_image,
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
-      seed: params.seed,
-      steps: params.steps,
-      cfg: params.cfg,
-      sampler_name: params.sampler_name,
-      lora_name: params.lora_name,
-      lora_strength: params.lora_strength,
-      filename_prefix:
-        params.filename_prefix || `huimeng/multi_angle/${task.id}`,
-    });
-
-    this.logger.log(`Submitting multi-angle camera task ${task.id} to ComfyUI`);
-    const result = await this.comfyUIService.executeWorkflow(workflow);
-
-    const images = this.comfyUIService.extractImagesFromOutput(result.outputs);
-    task.outputResult = { images, prompt_id: task.id };
+  /**
+   * 获取项目下的任务列表
+   * 注意: ComfyUI 不支持按项目查询，这里返回空数组
+   * 前端应依赖 WebSocket 推送来获取任务更新
+   */
+  async getProjectTasks(projectId: string): Promise<{ taskId: string; status: string; createdAt: string }[]> {
+    // ComfyUI 没有项目维度的查询接口，返回空
+    // 任务状态通过 WebSocket 实时推送
+    return [];
   }
 
-  // ============ 任务状态查询 ============
-
-  async getTaskStatus(taskId: string): Promise<GenerationTask | null> {
-    return this.tasks.get(taskId) || null;
-  }
-
-  async getProjectTasks(projectId: string): Promise<GenerationTask[]> {
-    return Array.from(this.tasks.values())
-      .filter((t) => t.projectId === projectId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  }
-
+  /**
+   * 处理 ComfyUI 回调 (Webhook)
+   */
   async handleComfyUICallback(
     jobId: string,
     status: "success" | "failed",
     outputs?: Record<string, unknown>,
     error?: string,
   ): Promise<void> {
-    const task = Array.from(this.tasks.values()).find(
-      (t) => t.id === jobId || (t.outputResult as any)?.prompt_id === jobId,
-    );
-    if (!task) return;
-
-    task.status = status === "success" ? "completed" : "failed";
-    task.outputResult = outputs;
-    task.error = error;
-    task.completedAt = new Date();
+    // 回调处理逻辑 - 如果 ComfyUI 支持 webhook 回调可以在这里处理
+    this.logger.log(`Received ComfyUI callback for job ${jobId}, status: ${status}`);
   }
 }

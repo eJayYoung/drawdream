@@ -1,6 +1,7 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
+import { useState } from 'react';
 import { Loader2, Sparkles, Upload, X } from 'lucide-react';
 
 type AssetForm = {
@@ -21,6 +22,7 @@ type AssetGeneratorModalProps = {
   generatingAsset: boolean;
   onClose: () => void;
   onSubmit: () => Promise<void>;
+  setLocalError?: (error: string | null) => void;
 };
 
 export function AssetGeneratorModal({
@@ -33,7 +35,15 @@ export function AssetGeneratorModal({
   generatingAsset,
   onClose,
   onSubmit,
+  setLocalError,
 }: AssetGeneratorModalProps) {
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSetError = (err: string | null) => {
+    setError(err);
+    setLocalError?.(err);
+  };
+
   if (!open) return null;
 
   return (
@@ -94,12 +104,16 @@ export function AssetGeneratorModal({
             <label className="mb-1 block text-sm font-medium">提示词</label>
             <textarea
               value={assetForm.prompt}
-              onChange={(event) =>
-                setAssetForm((current) => ({ ...current, prompt: event.target.value }))
-              }
+              onChange={(event) => {
+                setAssetForm((current) => ({ ...current, prompt: event.target.value }));
+                handleSetError(null);
+              }}
               className="min-h-[96px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="描述你想生成的图像内容..."
             />
+            {error && (
+              <p className="mt-1 text-sm text-destructive">{error}</p>
+            )}
           </div>
 
           <div>
@@ -149,7 +163,14 @@ export function AssetGeneratorModal({
             取消
           </button>
           <button
-            onClick={() => void onSubmit()}
+            onClick={() => {
+              if (!assetForm.prompt.trim()) {
+                handleSetError('请先输入资产提示词');
+                return;
+              }
+              handleSetError(null);
+              void onSubmit();
+            }}
             disabled={generatingAsset}
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >

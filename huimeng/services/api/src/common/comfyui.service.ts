@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
@@ -17,6 +17,7 @@ export interface HistoryItem {
   status: string;
   outputs?: any;
   error?: string;
+  rawData?: any; // 包含 filename 等完整返回数据
 }
 
 export interface UploadResult {
@@ -57,6 +58,14 @@ interface ApiResponse {
   };
 }
 
+export interface QueryResponse {
+  status: 'success' | 'failed' | 'pending' | 'unknown';
+  images?: string[];
+  outputs?: any;
+  error?: string;
+  rawData?: any;
+}
+
 @Injectable()
 export class ComfyUIService {
   private readonly logger = new Logger(ComfyUIService.name);
@@ -76,7 +85,7 @@ export class ComfyUIService {
     this.logger.log(`ComfyUI service initialized: ${this.baseUrl}, api key: ${this.apiKey}`);
   }
 
-  private buildRequest(api: string, callMode: 'async' | 'sync', requestContext: Record<string, any> = {}, inParam: object = {}, context?: object): ApiRequest {
+  private buildRequest(api: string, callMode: 'async' | 'sync', requestContext: Record<string, any> = {}, inParam: object = {}, prompt?: string): ApiRequest {
     return {
       header: {
         key: this.apiKey,
@@ -86,8 +95,8 @@ export class ComfyUIService {
       },
       body: {
         api,
-        prompt: '',
-        context: context ? JSON.stringify(context) : undefined,
+        prompt: prompt || '',
+        context: undefined,
         inParam: JSON.stringify(inParam),
       },
     };
@@ -95,16 +104,21 @@ export class ComfyUIService {
 
   /**
    * 提交 prompt 到 ComfyUI 执行
+   * @param api API 名称，对应 /api/render/call 的 body.api
+   * @param prompt 提示词
    * @param workflow 完整的 workflow JSON 对象
    */
-  async queuePrompt(workflow: object): Promise<QueuePromptResponse> {
+  async queuePrompt(api: string, prompt: string, workflow?: object): Promise<QueuePromptResponse> {
     try {
       const request = this.buildRequest(
-        'createRolePicture',
+        api,
         'async',
         {},
         workflow,
+        prompt,
       );
+
+      this.logger.log(`[ComfyUI] curl -X POST ${this.baseUrl}/api/render/call -H 'Content-Type: application/json' -d '${JSON.stringify(request)}'`);
 
       const response = await axios.post(
         `${this.baseUrl}/api/render/call`,
@@ -114,21 +128,12 @@ export class ComfyUIService {
 
       this.logger.log(`Queue response: ${JSON.stringify(response.data)}`);
 
-      // 解析 prompt_id 从 outParam 中
-      let promptId = '';
-      const outParam = response.data?.body?.outParam;
-      if (outParam) {
-        try {
-          const parsed = typeof outParam === 'string' ? JSON.parse(outParam) : outParam;
-          promptId = parsed.task_id || parsed.prompt_id || '';
-        } catch {
-          promptId = '';
-        }
-      }
+      // 从 body.taskId 获取 taskId
+      const taskId = response.data?.body?.taskId || '';
 
-      this.logger.log(`Prompt queued: ${promptId}`);
+      this.logger.log(`Prompt queued with taskId: ${taskId}`);
       return {
-        prompt_id: promptId,
+        prompt_id: taskId,
         number: 0,
       };
     } catch (error: any) {
@@ -141,17 +146,23 @@ export class ComfyUIService {
   }
 
   /**
-   * 获取 prompt 执行历史
-   * @param promptId 从 queuePrompt 返回的 prompt_id
+   * 只提交任务，不等待完成（用于后台轮询场景）
+   * @param api API 名称
+   * @param prompt 提示词
+   * @param workflow 完整的 workflow JSON 对象
    */
-  async getHistory(promptId: string): Promise<HistoryItem | null> {
+  async submitTask(api: string, prompt: string, workflow?: object): Promise<{ prompt_id: string }> {
     try {
       const request = this.buildRequest(
-        'taskStatusQuery',
-        'sync',
-        { prompt_id: promptId },
-        {},
+        api,
+        'async',
+        {},      // requestContext
+        workflow || {}, // inParam - workflow 参数
+        prompt,  // prompt 作为 body.prompt 传递
       );
+
+      this.logger.log(`[ComfyUI] submitTask: POST ${this.baseUrl}/api/render/call`);
+      this.logger.log(`[ComfyUI] curl -X POST ${this.baseUrl}/api/render/call -H 'Content-Type: application/json' -d '${JSON.stringify(request)}'`);
 
       const response = await axios.post(
         `${this.baseUrl}/api/render/call`,
@@ -159,7 +170,62 @@ export class ComfyUIService {
         { timeout: 10000 }
       );
 
-      this.logger.log(`History response: ${JSON.stringify(response.data)}`);
+      this.logger.log(`submitTask response: ${JSON.stringify(response.data)}`);
+
+      // 检查错误响应
+      if (response.data?.header?.result === 'error') {
+        const errorMsg = response.data?.header?.description || 'Unknown error';
+        throw new BadRequestException(`ComfyUI error: ${errorMsg}`);
+      }
+
+      // 尝试多种可能的响应格式
+      const prompt_id =
+        response.data?.body?.taskId ||
+        response.data?.body?.prompt_id ||
+        response.data?.taskId ||
+        response.data?.prompt_id ||
+        '';
+      this.logger.log(`Task submitted with prompt_id: ${prompt_id}`);
+      if (!prompt_id) {
+        this.logger.warn(`submitTask: no taskId found in response, full response: ${JSON.stringify(response.data)}`);
+      }
+      return { prompt_id };
+    } catch (error: any) {
+      this.logger.error(`submitTask failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取 prompt 执行历史
+   * @param promptId 从 queuePrompt 返回的 prompt_id
+   */
+  async getHistory(taskId: string): Promise<QueryResponse> {
+    try {
+      const request = {
+        header: {
+          key: this.apiKey,
+          callMode: 'sync',
+          operationType: 'call',
+          requestContext: {},
+        },
+        body: {
+          api: 'queryTaskStatus',
+          prompt: '',
+          inParam: '{}',
+          taskId,
+        },
+      };
+
+      this.logger.log(`[ComfyUI] curl -X POST ${this.baseUrl}/api/render/query -H 'Content-Type: application/json' -d '${JSON.stringify(request)}'`);
+
+      const response = await axios.post(
+        `${this.baseUrl}/api/render/query`,
+        request,
+        { timeout: 10000 }
+      );
+
+      this.logger.log(`Query response: ${JSON.stringify(response.data)}`);
 
       const data = response.data;
       const body = data?.body || {};
@@ -174,21 +240,41 @@ export class ComfyUIService {
         }
       }
 
-      // outParam 可能是一个嵌套对象，键是 prompt_id
-      const promptData = outParam[promptId] || outParam;
-
       // 获取任务状态
-      const taskStatus = body?.taskStatus || promptData?.status?.status_str || 'unknown';
-      const status = taskStatus === 'success' ? 'success' : taskStatus === 'failed' ? 'failed' : taskStatus;
+      const taskStatus = body?.taskStatus || 'unknown';
+      let status: 'success' | 'failed' | 'pending' | 'unknown' = 'unknown';
+
+      if (taskStatus === 'completed') {
+        status = 'success';
+      } else if (taskStatus === 'failed') {
+        status = 'failed';
+      } else if (taskStatus === 'pending' || taskStatus === 'running') {
+        status = 'pending';
+      }
+
+      // 从 outParam 中提取 images（直接使用资产ID，不构造URL）
+      const images: string[] = [];
+      if (outParam?.images && Array.isArray(outParam.images)) {
+        for (const img of outParam.images) {
+          // img 可能是字符串 filename 或对象 { filename, subfolder, type }
+          if (typeof img === 'string') {
+            images.push(img);
+          } else if (img?.filename) {
+            images.push(img.filename);
+          }
+        }
+      }
 
       return {
         status,
-        outputs: promptData?.outputs || null,
-        error: promptData?.error || null,
+        images,
+        outputs: outParam,
+        error: outParam?.error || null,
+        rawData: outParam,
       };
     } catch (error: any) {
-      this.logger.error(`Failed to get history: ${error.message}`);
-      return null;
+      this.logger.error(`Failed to query task: ${error.message}`);
+      return { status: 'unknown', error: error.message };
     }
   }
 
@@ -199,21 +285,21 @@ export class ComfyUIService {
    * @param intervalMs 轮询间隔（毫秒）
    */
   async waitForCompletion(
-    promptId: string,
+    taskId: string,
     maxWaitMs = 300000, // 5分钟
     intervalMs = 2000,
-  ): Promise<HistoryItem> {
+  ): Promise<QueryResponse> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < maxWaitMs) {
-      const history = await this.getHistory(promptId);
-
-      if (history) {
-        if (history.status === 'success') {
-          return history;
+      const result = await this.getHistory(taskId);
+      this.logger.log(`Polling task ${taskId}: ${result.status}`);
+      if (result) {
+        if (result.status === 'success') {
+          return result;
         }
-        if (history.status === 'failed') {
-          throw new Error(`ComfyUI execution failed: ${history.error}`);
+        if (result.status === 'failed') {
+          throw new Error(`ComfyUI execution failed: ${result.error}`);
         }
       }
 
@@ -225,10 +311,13 @@ export class ComfyUIService {
 
   /**
    * 完整的执行流程：提交并等待结果
+   * @param api API 名称，对应 /api/render/call 的 body.api
+   * @param prompt 提示词
+   * @param workflow 完整的 workflow JSON 对象
    */
-  async executeWorkflow(workflow: object): Promise<HistoryItem> {
-    const { prompt_id } = await this.queuePrompt(workflow);
-    this.logger.log(`Workflow submitted with prompt_id: ${prompt_id}`);
+  async executeWorkflow(api: string, prompt: string, workflow?: object): Promise<QueryResponse> {
+    const { prompt_id } = await this.queuePrompt(api, prompt, workflow);
+    this.logger.log(`Workflow submitted with taskId: ${prompt_id}`);
     return this.waitForCompletion(prompt_id);
   }
 
@@ -254,6 +343,13 @@ export class ComfyUIService {
     const images: string[] = [];
 
     if (!outputs) return images;
+
+    // 如果 outputs 是直接包含 filename 的对象（如 { filename: "xxx.png" }）
+    if (outputs.filename) {
+      const url = `${this.baseUrl}/view?filename=${outputs.filename}&subfolder=${outputs.subfolder || ''}&type=${outputs.type || 'output'}`;
+      images.push(url);
+      return images;
+    }
 
     // outputs 结构可能是 { "76": { "images": [...] } }
     for (const nodeOutputs of Object.values(outputs) as any[]) {

@@ -17,6 +17,8 @@ export interface CharacterImageParams {
   clip_type?: string;
   vae_name?: string;
   filename_prefix?: string;
+  view_width?: string;
+  view_height?: string;
 }
 
 export interface SceneImageParams {
@@ -152,10 +154,12 @@ export class WorkflowTemplateService {
   private workflowCache: Map<string, any> = new Map();
 
   constructor() {
-    // __dirname = huimeng/services/api/dist when built
-    // Go up 2 levels to reach huimeng/, then into services/comfyui/workflows
+    // __dirname = huimeng/services/api/dist/common when built
+    // Go up 4 levels to reach huimeng/, then into services/comfyui/workflows
     this.workflowsPath = path.join(
       __dirname,
+      '..',
+      '..',
       '..',
       '..',
       'services',
@@ -254,6 +258,7 @@ export class WorkflowTemplateService {
     const finalParams = { ...defaults, ...params };
 
     let workflow = this.replacePlaceholders(template, finalParams);
+    console.log('workflow before setNodeValue:', JSON.stringify(workflow, null, 2));
 
     // Debug: check if node 91 exists and has the expected structure
     this.logger.log(`Node 91 exists: ${!!workflow['91']}`);
