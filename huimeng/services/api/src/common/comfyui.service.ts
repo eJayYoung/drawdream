@@ -1,7 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { Readable } from 'stream';
 
 export interface WorkflowResult {
   images?: string[];
@@ -18,6 +17,7 @@ export interface HistoryItem {
   status: string;
   outputs?: any;
   error?: string;
+  rawData?: any; // 包含 filename 等完整返回数据
 }
 
 export interface UploadResult {
@@ -25,38 +25,117 @@ export interface UploadResult {
   url: string;
 }
 
+interface ApiRequestHeader {
+  key: string;
+  callMode: 'async' | 'sync';
+  operationType: 'call' | 'query';
+  requestContext: Record<string, any>;
+}
+
+interface ApiRequestBody {
+  api: string;
+  prompt: string;
+  context?: string;  // JSON 格式
+  inParam: string;   // JSON 格式
+  taskId?: string;   // for query
+}
+
+interface ApiRequest {
+  header: ApiRequestHeader;
+  body: ApiRequestBody;
+}
+
+interface ApiResponse {
+  header: {
+    result: string;
+    code: string;
+    description: string;
+  };
+  body: {
+    taskId: string;
+    taskStatus: string;
+    outParam: string; // JSON 格式
+  };
+}
+
+export interface QueryResponse {
+  status: 'success' | 'failed' | 'pending' | 'unknown';
+  images?: string[];
+  outputs?: any;
+  error?: string;
+  rawData?: any;
+}
+
 @Injectable()
 export class ComfyUIService {
   private readonly logger = new Logger(ComfyUIService.name);
   private readonly baseUrl: string;
+  private readonly apiKey: string;
   private readonly clientId: string;
   private readonly outputDir: string;
 
   constructor(private configService: ConfigService) {
-    const host = this.configService.get<string>('COMFYUI_HOST', 'localhost');
-    const port = this.configService.get<string>('COMFYUI_PORT', '3001');
+    const host = this.configService.get<string>('COMFYUI_HOST', '36.138.102.196');
+    const port = this.configService.get<string>('COMFYUI_PORT', '8081');
+    const apiKey = this.configService.get<string>('COMFYUI_API_KEY', 'hm-yijie');
     this.outputDir = this.configService.get<string>('COMFYUI_OUTPUT_DIR', 'output');
     this.baseUrl = `http://${host}:${port}`;
+    this.apiKey = apiKey;
     this.clientId = `huimeng-${Date.now()}`;
-    this.logger.log(`ComfyUI service initialized: ${this.baseUrl}, output dir: ${this.outputDir}`);
+    this.logger.log(`ComfyUI service initialized: ${this.baseUrl}, api key: ${this.apiKey}`);
+  }
+
+  private buildRequest(api: string, callMode: 'async' | 'sync', requestContext: Record<string, any> = {}, inParam: object = {}, prompt?: string): ApiRequest {
+    return {
+      header: {
+        key: this.apiKey,
+        callMode,
+        operationType: 'call',
+        requestContext,
+      },
+      body: {
+        api,
+        prompt: prompt || '',
+        context: undefined,
+        inParam: JSON.stringify(inParam),
+      },
+    };
   }
 
   /**
    * 提交 prompt 到 ComfyUI 执行
+   * @param api API 名称，对应 /api/render/call 的 body.api
+   * @param prompt 提示词
    * @param workflow 完整的 workflow JSON 对象
    */
-  async queuePrompt(workflow: object): Promise<QueuePromptResponse> {
+  async queuePrompt(api: string, prompt: string, workflow?: object): Promise<QueuePromptResponse> {
     try {
+      const request = this.buildRequest(
+        api,
+        'async',
+        {},
+        workflow,
+        prompt,
+      );
+
+      this.logger.log(`[ComfyUI] curl -X POST ${this.baseUrl}/api/render/call -H 'Content-Type: application/json' -d '${JSON.stringify(request)}'`);
+
       const response = await axios.post(
-        `${this.baseUrl}/prompt`,
-        {
-          prompt: workflow,
-          client_id: this.clientId,
-        },
+        `${this.baseUrl}/api/render/call`,
+        request,
         { timeout: 10000 }
       );
-      this.logger.log(`Prompt queued: ${response.data.prompt_id}`);
-      return response.data;
+
+      this.logger.log(`Queue response: ${JSON.stringify(response.data)}`);
+
+      // 从 body.taskId 获取 taskId
+      const taskId = response.data?.body?.taskId || '';
+
+      this.logger.log(`Prompt queued with taskId: ${taskId}`);
+      return {
+        prompt_id: taskId,
+        number: 0,
+      };
     } catch (error: any) {
       this.logger.error(`Failed to queue prompt: ${error.message}`);
       if (error.response) {
@@ -67,20 +146,135 @@ export class ComfyUIService {
   }
 
   /**
+   * 只提交任务，不等待完成（用于后台轮询场景）
+   * @param api API 名称
+   * @param prompt 提示词
+   * @param workflow 完整的 workflow JSON 对象
+   */
+  async submitTask(api: string, prompt: string, workflow?: object): Promise<{ prompt_id: string }> {
+    try {
+      const request = this.buildRequest(
+        api,
+        'async',
+        {},      // requestContext
+        workflow || {}, // inParam - workflow 参数
+        prompt,  // prompt 作为 body.prompt 传递
+      );
+
+      this.logger.log(`[ComfyUI] submitTask: POST ${this.baseUrl}/api/render/call`);
+      this.logger.log(`[ComfyUI] curl -X POST ${this.baseUrl}/api/render/call -H 'Content-Type: application/json' -d '${JSON.stringify(request)}'`);
+
+      const response = await axios.post(
+        `${this.baseUrl}/api/render/call`,
+        request,
+        { timeout: 10000 }
+      );
+
+      this.logger.log(`submitTask response: ${JSON.stringify(response.data)}`);
+
+      // 检查错误响应
+      if (response.data?.header?.result === 'error') {
+        const errorMsg = response.data?.header?.description || 'Unknown error';
+        throw new BadRequestException(`ComfyUI error: ${errorMsg}`);
+      }
+
+      // 尝试多种可能的响应格式
+      const prompt_id =
+        response.data?.body?.taskId ||
+        response.data?.body?.prompt_id ||
+        response.data?.taskId ||
+        response.data?.prompt_id ||
+        '';
+      this.logger.log(`Task submitted with prompt_id: ${prompt_id}`);
+      if (!prompt_id) {
+        this.logger.warn(`submitTask: no taskId found in response, full response: ${JSON.stringify(response.data)}`);
+      }
+      return { prompt_id };
+    } catch (error: any) {
+      this.logger.error(`submitTask failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * 获取 prompt 执行历史
    * @param promptId 从 queuePrompt 返回的 prompt_id
    */
-  async getHistory(promptId: string): Promise<HistoryItem | null> {
+  async getHistory(taskId: string): Promise<QueryResponse> {
     try {
-      const response = await axios.get(
-        `${this.baseUrl}/history/${promptId}`,
+      const request = {
+        header: {
+          key: this.apiKey,
+          callMode: 'sync',
+          operationType: 'call',
+          requestContext: {},
+        },
+        body: {
+          api: 'queryTaskStatus',
+          prompt: '',
+          inParam: '{}',
+          taskId,
+        },
+      };
+
+      this.logger.log(`[ComfyUI] curl -X POST ${this.baseUrl}/api/render/query -H 'Content-Type: application/json' -d '${JSON.stringify(request)}'`);
+
+      const response = await axios.post(
+        `${this.baseUrl}/api/render/query`,
+        request,
         { timeout: 10000 }
       );
-      const history = response.data;
-      return history[promptId] || null;
+
+      this.logger.log(`Query response: ${JSON.stringify(response.data)}`);
+
+      const data = response.data;
+      const body = data?.body || {};
+
+      // 解析 outParam (可能是字符串或对象)
+      let outParam: any = {};
+      if (body?.outParam) {
+        try {
+          outParam = typeof body.outParam === 'string' ? JSON.parse(body.outParam) : body.outParam;
+        } catch {
+          outParam = {};
+        }
+      }
+
+      // 获取任务状态
+      const taskStatus = body?.taskStatus || 'unknown';
+      let status: 'success' | 'failed' | 'pending' | 'unknown' = 'unknown';
+
+      if (taskStatus === 'completed') {
+        status = 'success';
+      } else if (taskStatus === 'failed') {
+        status = 'failed';
+      } else if (taskStatus === 'pending' || taskStatus === 'running') {
+        status = 'pending';
+      }
+
+      // 从 outParam 中提取 images（直接使用资产ID，不构造URL）
+      const images: string[] = [];
+      if (outParam?.images && Array.isArray(outParam.images)) {
+        for (const img of outParam.images) {
+          // img 可能是字符串 filename 或对象 { filename, subfolder, type }
+          if (typeof img === 'string') {
+            images.push(img);
+          } else if (img?.filename) {
+            images.push(img.filename);
+          }
+        }
+      }
+
+      return {
+        status,
+        images,
+        outputs: outParam,
+        error: outParam?.error || null,
+        rawData: outParam,
+      };
     } catch (error: any) {
-      this.logger.error(`Failed to get history: ${error.message}`);
-      return null;
+      this.logger.error(`Failed to query task: ${error.message}`);
+      return { status: 'unknown', error: error.message };
     }
   }
 
@@ -91,21 +285,21 @@ export class ComfyUIService {
    * @param intervalMs 轮询间隔（毫秒）
    */
   async waitForCompletion(
-    promptId: string,
+    taskId: string,
     maxWaitMs = 300000, // 5分钟
     intervalMs = 2000,
-  ): Promise<HistoryItem> {
+  ): Promise<QueryResponse> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < maxWaitMs) {
-      const history = await this.getHistory(promptId);
-
-      if (history) {
-        if (history.status === 'success') {
-          return history;
+      const result = await this.getHistory(taskId);
+      this.logger.log(`Polling task ${taskId}: ${result.status}`);
+      if (result) {
+        if (result.status === 'success') {
+          return result;
         }
-        if (history.status === 'failed') {
-          throw new Error(`ComfyUI execution failed: ${history.error}`);
+        if (result.status === 'failed') {
+          throw new Error(`ComfyUI execution failed: ${result.error}`);
         }
       }
 
@@ -117,9 +311,13 @@ export class ComfyUIService {
 
   /**
    * 完整的执行流程：提交并等待结果
+   * @param api API 名称，对应 /api/render/call 的 body.api
+   * @param prompt 提示词
+   * @param workflow 完整的 workflow JSON 对象
    */
-  async executeWorkflow(workflow: object): Promise<HistoryItem> {
-    const { prompt_id } = await this.queuePrompt(workflow);
+  async executeWorkflow(api: string, prompt: string, workflow?: object): Promise<QueryResponse> {
+    const { prompt_id } = await this.queuePrompt(api, prompt, workflow);
+    this.logger.log(`Workflow submitted with taskId: ${prompt_id}`);
     return this.waitForCompletion(prompt_id);
   }
 
@@ -128,8 +326,7 @@ export class ComfyUIService {
    */
   async getInfo(): Promise<any> {
     try {
-      // ComfyUI 0.18+ 使用 /system_stats，旧版本用 /api/info
-      const response = await axios.get(`${this.baseUrl}/system_stats`, {
+      const response = await axios.get(`${this.baseUrl}/api/render/call/stats`, {
         timeout: 5000,
       });
       return response.data;
@@ -141,14 +338,20 @@ export class ComfyUIService {
 
   /**
    * 从 history 输出中提取图片 URL
-   * ComfyUI 输出格式: { "images": [{ "filename": "xxx.png", "subfolder": "", "type": "output" }] }
    */
   extractImagesFromOutput(outputs: any): string[] {
     const images: string[] = [];
 
     if (!outputs) return images;
 
-    // 遍历所有输出找 images
+    // 如果 outputs 是直接包含 filename 的对象（如 { filename: "xxx.png" }）
+    if (outputs.filename) {
+      const url = `${this.baseUrl}/view?filename=${outputs.filename}&subfolder=${outputs.subfolder || ''}&type=${outputs.type || 'output'}`;
+      images.push(url);
+      return images;
+    }
+
+    // outputs 结构可能是 { "76": { "images": [...] } }
     for (const nodeOutputs of Object.values(outputs) as any[]) {
       if (nodeOutputs?.images) {
         for (const img of nodeOutputs.images) {
@@ -169,7 +372,6 @@ export class ComfyUIService {
   async uploadImage(imageBuffer: Buffer, filename: string): Promise<UploadResult> {
     try {
       const formData = new FormData();
-      // Convert Buffer to Uint8Array for better compatibility
       const uint8Array = new Uint8Array(imageBuffer);
       formData.append('image', new Blob([uint8Array]), filename);
 
@@ -199,8 +401,6 @@ export class ComfyUIService {
 
   /**
    * 上传图片并返回可在 workflow 中使用的文件名
-   * @param imageBuffer 图片 Buffer
-   * @param subfolder 子文件夹（如 'characters', 'scenes'）
    */
   async uploadImageForWorkflow(
     imageBuffer: Buffer,
@@ -208,7 +408,6 @@ export class ComfyUIService {
     subfolder: string = '',
   ): Promise<string> {
     const result = await this.uploadImage(imageBuffer, filename);
-    // 返回相对于 output 目录的路径格式
     return subfolder ? `${subfolder}/${filename}` : filename;
   }
 
@@ -229,8 +428,6 @@ export class ComfyUIService {
 
   /**
    * 下载输出文件
-   * @param filename 文件名
-   * @param subfolder 子文件夹
    */
   async downloadOutputFile(filename: string, subfolder: string = ''): Promise<Buffer> {
     try {

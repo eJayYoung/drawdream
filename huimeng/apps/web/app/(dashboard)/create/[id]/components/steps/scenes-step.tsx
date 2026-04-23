@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Edit2,
   Film,
@@ -11,10 +11,12 @@ import {
   Trash2,
   Upload,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import { AssetGeneratorModal } from '../asset-generator-modal';
 import { ErrorBanner } from '../error-banner';
 import { useCreateWorkflowStore } from '../../workflow-store';
+import { useSocketIO, type GenerationProgressPayload } from '../../../../../../lib/use-socket-io';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -67,7 +69,6 @@ export function ScenesStep() {
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetForm, setAssetForm] = useState(createEmptyAssetForm());
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
-  const [generatingAsset, setGeneratingAsset] = useState(false);
 
   const [showScriptSelect, setShowScriptSelect] = useState(false);
   const [selectedScriptForAI, setSelectedScriptForAI] = useState<number>(
@@ -77,6 +78,56 @@ export function ScenesStep() {
   const [aiGeneratedScenes, setAiGeneratedScenes] = useState<any[]>([]);
   const [selectedSceneIndices, setSelectedSceneIndices] = useState<number[]>([]);
   const [showScenePreview, setShowScenePreview] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Pending asset taskId → { sceneIndex, assetIndex } mapping
+  const pendingScenesRef = useRef<Map<string, { sceneIndex: number; assetIndex: number }>>(new Map());
+
+  // --- WebSocket for real-time asset updates ---
+  const [userId, setUserId] = useState('');
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken');
+    try {
+      if (token) {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          atob(base64)
+            .split('')
+            .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join(''),
+        );
+        const payload = JSON.parse(jsonPayload);
+        setUserId(payload.sub || '');
+      }
+    } catch {
+      setUserId('');
+    }
+  }, []);
+
+  useSocketIO({
+    userId,
+    projectId: projectId ?? undefined,
+    onGenerationProgress: (data: GenerationProgressPayload) => {
+      const pending = pendingScenesRef.current;
+      if (data.status === 'completed' && data.outputResult?.assets) {
+        const mapping = pending.get(data.taskId);
+        if (mapping) {
+          const assets = data.outputResult.assets as string[];
+          const nextScenes = [...scenesResult];
+          const scene = nextScenes[mapping.sceneIndex];
+          if (scene?.assets?.[mapping.assetIndex]) {
+            scene.assets[mapping.assetIndex] = {
+              ...scene.assets[mapping.assetIndex],
+              url: assets[0] || '/placeholder.png',
+            };
+            void persistScenes(nextScenes);
+          }
+          pending.delete(data.taskId);
+        }
+      }
+    },
+  });
 
   const step = steps.find((item) => item.id === 'scenes');
 
@@ -284,11 +335,29 @@ export function ScenesStep() {
                         <div key={asset.id || index} className="overflow-hidden rounded-lg border">
                           <div className="relative aspect-square bg-muted">
                             {asset.type === 'image' ? (
-                              <img
-                                src={asset.url}
-                                alt={asset.prompt}
-                                className="h-full w-full object-cover"
-                              />
+                              asset.url && asset.url !== '/placeholder.png' ? (
+                                <div
+                                  className="group relative h-full cursor-pointer"
+                                  onClick={() => setPreviewImage(asset.url)}
+                                >
+                                  <img
+                                    src={asset.url}
+                                    alt={asset.prompt}
+                                    className="h-full w-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
+                                    <ZoomIn
+                                      size={24}
+                                      className="text-white opacity-0 transition-opacity group-hover:opacity-100"
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex h-full items-center justify-center bg-muted/50">
+                                  <Loader2 className="animate-spin text-muted-foreground" size={32} />
+                                  <span className="ml-2 text-xs text-muted-foreground">生成中...</span>
+                                </div>
+                              )
                             ) : (
                               <div className="flex h-full items-center justify-center">
                                 <Film size={24} className="text-muted-foreground" />
@@ -515,72 +584,85 @@ export function ScenesStep() {
         setAssetForm={setAssetForm}
         referenceImage={referenceImage}
         setReferenceImage={setReferenceImage}
-        generatingAsset={generatingAsset}
+        generatingAsset={false}
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
           setReferenceImage(null);
         }}
         onSubmit={async () => {
-          if (!assetForm.prompt.trim()) {
-            setError('请先输入资产提示词');
-            return;
-          }
           if (selectedSceneIndex === null || !projectId) return;
 
-          setGeneratingAsset(true);
           setError('');
 
+          const token =
+            typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
+          const promptParts = [assetForm.shotSize, assetForm.angle, assetForm.prompt].filter(
+            Boolean,
+          );
+          const fullPrompt = promptParts.join(', ');
+
+          // 1. Add pending asset with placeholder — don't block on generation
+          const nextScenes = [...scenesResult];
+          const nextAssets = nextScenes[selectedSceneIndex].assets || [];
+          const newAssetIndex = nextAssets.length;
+          nextAssets.push({
+            id: `asset-${Date.now()}`,
+            type: assetForm.type,
+            url: '/placeholder.png',
+            prompt: fullPrompt,
+            tags: [],
+            angle: assetForm.angle,
+            shotSize: assetForm.shotSize,
+            createdAt: new Date().toISOString(),
+          });
+          nextScenes[selectedSceneIndex] = {
+            ...nextScenes[selectedSceneIndex],
+            assets: nextAssets,
+          };
+          await persistScenes(nextScenes);
+
+          // 2. Close modal immediately
+          setShowAssetForm(false);
+          setAssetForm(createEmptyAssetForm());
+          setReferenceImage(null);
+
+          // 3. Submit generation task
           try {
-            const token =
-              typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
-            const promptParts = [assetForm.shotSize, assetForm.angle, assetForm.prompt].filter(
-              Boolean,
-            );
-            const fullPrompt = promptParts.join(', ');
-            const res = await fetch(`${API_URL}/api/generation/image`, {
+            const res = await fetch(`${API_URL}/api/generation/queue`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${token}`,
               },
               body: JSON.stringify({
-                prompt: fullPrompt,
-                referenceImage,
                 projectId,
+                taskType: 'createScenePicture-t2i',
+                prompt: fullPrompt,
+                inputParams: {
+                  reference_image: referenceImage,
+                  view_width: '720',
+                  view_height: '1280',
+                },
               }),
             });
 
-            if (!res.ok) {
-              throw new Error('场景资产生成失败');
-            }
+            if (!res.ok) throw new Error('场景资产生成失败');
 
             const data = await res.json();
-            const nextScenes = [...scenesResult];
-            const nextAssets = nextScenes[selectedSceneIndex].assets || [];
-            nextAssets.push({
-              id: `asset-${Date.now()}`,
-              type: assetForm.type,
-              url: data.imageUrl || data.url || '/placeholder.png',
-              prompt: fullPrompt,
-              tags: [],
-              angle: assetForm.angle,
-              shotSize: assetForm.shotSize,
-              createdAt: new Date().toISOString(),
-            });
-            nextScenes[selectedSceneIndex] = {
-              ...nextScenes[selectedSceneIndex],
-              assets: nextAssets,
-            };
+            const taskId: string = data.taskId;
 
-            await persistScenes(nextScenes);
-            setShowAssetForm(false);
-            setAssetForm(createEmptyAssetForm());
-            setReferenceImage(null);
+            // 4. Register pending mapping so WebSocket can update the right asset
+            pendingScenesRef.current.set(taskId, {
+              sceneIndex: selectedSceneIndex,
+              assetIndex: newAssetIndex,
+            });
           } catch (submitError: any) {
+            // Rollback: remove the placeholder asset on failure
+            const rollback = [...scenesResult];
+            rollback[selectedSceneIndex].assets?.pop();
+            await persistScenes(rollback);
             setError(submitError.message || '场景资产生成失败');
-          } finally {
-            setGeneratingAsset(false);
           }
         }}
       />
@@ -766,6 +848,26 @@ export function ScenesStep() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+    {/* 图片预览弹窗 */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setPreviewImage(null)}
+        >
+          <button
+            className="absolute right-4 top-4 rounded-lg bg-white/10 p-2 text-white hover:bg-white/20"
+            onClick={() => setPreviewImage(null)}
+          >
+            <X size={24} />
+          </button>
+          <img
+            src={previewImage}
+            alt="预览"
+            className="max-h-[90vh] max-w-[90vw] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

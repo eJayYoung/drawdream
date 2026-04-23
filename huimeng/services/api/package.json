@@ -10,13 +10,14 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "db:migrate": "pnpm exec mikro-orm migration:run",
+    "db:migrate": "pnpm exec mikro-orm migration:up",
     "db:create": "pnpm exec mikro-orm schema:create --run",
     "db:update": "pnpm exec mikro-orm schema:update --run",
     "db:drop": "pnpm exec mikro-orm schema:drop --run",
     "db:seed": "ts-node src/database/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1034.0",
     "@huimeng/shared-types": "workspace:*",
     "@mikro-orm/core": "^7.0.0",
     "@mikro-orm/decorators": "^7.0.10",

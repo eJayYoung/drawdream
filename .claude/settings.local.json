@@ -67,7 +67,18 @@
       "Bash(grep:*)",
       "Bash(ping -c 3 36.139.149.26)",
       "Bash(awk '{print $1}')",
-      "Bash(xargs -r docker stop)"
+      "Bash(xargs -r docker stop)",
+      "Bash(npm run:*)",
+      "Bash(pg_isready -h localhost -p 5432)",
+      "Bash(docker exec huimeng-postgres:*)",
+      "Bash(npm install:*)",
+      "Bash(yarn workspace:*)",
+      "WebFetch(domain:ecloud.10086.cn)",
+      "WebSearch",
+      "Bash(npx next:*)",
+      "Bash(xxd /Users/ejay/drawdream-platform/huimeng/apps/web/app/\\\\\\(dashboard\\\\\\)/create/\\\\[id\\\\]/components/steps/characters-step.tsx)",
+      "Bash(git -C /Users/ejay/drawdream-platform show HEAD:huimeng/apps/web/app/\\\\\\(dashboard\\\\\\)/create/\\\\[id\\\\]/components/steps/characters-step.tsx)",
+      "Bash(git -C /Users/ejay/drawdream-platform diff huimeng/apps/web/app/\\\\\\(dashboard\\\\\\)/create/\\\\[id\\\\]/components/steps/characters-step.tsx)"
     ]
   }
 }
