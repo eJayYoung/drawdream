@@ -64,13 +64,24 @@ export class ComfyUIService {
    * @param formFields 其他表单字段，如 { key, assetType, assetDesc }
    */
   async uploadAsset(
-    fileBuffer: Blob,
+    fileBuffer: Buffer | Blob,
     filename: string,
     formFields: Record<string, string> = {},
   ): Promise<any> {
     try {
       const formData = new FormData();
-      formData.append('file', fileBuffer, filename);
+      // Convert Buffer to proper Blob using Uint8Array to ensure compatibility with undici FormData
+      let blob: Blob;
+      if (fileBuffer instanceof Blob) {
+        blob = fileBuffer;
+      } else {
+        const uint8Array = new Uint8Array(fileBuffer);
+        blob = new Blob([uint8Array]);
+      }
+      formData.append('file', blob, filename);
+      formData.append('key', formFields.key || 'hm-yijie');
+      formData.append('assetType', formFields.assetType || 'SENE_IMG');
+      formData.append('assetDesc', formFields.assetDesc || '参考图生图');
       for (const [key, value] of Object.entries(formFields)) {
         formData.append(key, value);
       }
@@ -105,7 +116,7 @@ export class ComfyUIService {
       // 构建 requestContext
       const requestContext: Record<string, any> = {};
       if (referenceAssetId) {
-        requestContext['imageId-1'] = referenceAssetId;
+        requestContext['image'] = referenceAssetId;
       }
 
       const request = {
@@ -124,6 +135,7 @@ export class ComfyUIService {
       };
 
       this.logger.log(`[ComfyUI] submitWorkflow: POST ${this.baseUrl}/api/render/call`);
+      this.logger.log(`[ComfyUI] requestContext: ${JSON.stringify(requestContext)}`);
       this.logger.log(`[ComfyUI] curl -X POST ${this.baseUrl}/api/render/call -H 'Content-Type: application/json' -d '${JSON.stringify(request)}'`);
 
       const response = await axios.post<ApiResponse>(

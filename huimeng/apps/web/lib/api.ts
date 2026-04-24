@@ -22,7 +22,7 @@ api.interceptors.request.use((config) => {
 
 // Handle auth errors
 api.interceptors.response.use(
-  (response) => response,
+  (response) => response.data,
   async (error) => {
     if (error.response?.status === 401) {
       // Token expired, redirect to login

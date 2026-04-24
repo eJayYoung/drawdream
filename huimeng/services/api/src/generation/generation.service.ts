@@ -29,6 +29,7 @@ interface ExecuteWorkflowParams {
   episodeId?: string;
   storyboardId?: string;
   referenceAssetId?: string;
+  referenceAssetContent?: string;
 }
 
 @Injectable()
@@ -72,7 +73,7 @@ export class GenerationService {
    * 5. 返回 taskId
    */
   async executeWorkflow(params: ExecuteWorkflowParams): Promise<{ taskId: string; status: string }> {
-    const { userId, projectId, taskType, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId } = params;
+    const { userId, projectId, taskType, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId, referenceAssetContent } = params;
 
     // 1. 解析 inParam
     let inParam: InParam;
@@ -94,12 +95,16 @@ export class GenerationService {
     const aspectRatio = project?.aspectRatio || "16:9";
     const resolution = inParam.resolution || this.getResolution(aspectRatio);
 
-    // 4. 重新组装 inParam（补充 resolution）
+    // 4. 重新组装 inParam（补充 resolution，image 优先用 referenceAssetContent）
     const finalInParam: InParam = {
       prompt: inParam.prompt || prompt,
       resolution,
-      ...(inParam.image ? { image: inParam.image } : {}),
     };
+    if (referenceAssetContent) {
+      finalInParam.image = referenceAssetContent;
+    } else if (inParam.image) {
+      finalInParam.image = inParam.image;
+    }
     const finalInParamStr = JSON.stringify(finalInParam);
 
     // 5. 提交到 ComfyUI 远程服务

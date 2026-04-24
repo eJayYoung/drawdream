@@ -1,5 +1,6 @@
 'use client';
 
+import { api } from '../../../../../../lib/api';
 import { useEffect, useRef, useState } from 'react';
 import {
   Edit2,
@@ -87,6 +88,7 @@ export function CharactersStep() {
   const [assetForm, setAssetForm] = useState(createEmptyAssetForm());
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const referenceAssetIdRef = useRef<string | undefined>();
+  const referenceAssetContentRef = useRef<string | undefined>();
   // Pending asset taskId → { characterIndex, assetIndex } mapping
   const pendingAssetsRef = useRef<PendingMap>(new Map());
 
@@ -115,23 +117,30 @@ export function CharactersStep() {
     projectId: projectId ?? undefined,
     onGenerationProgress: (data: GenerationProgressPayload) => {
       const pending = pendingAssetsRef.current;
+      const mapping = pending.get(data.taskId);
+      if (!mapping) return;
+
       if (data.status === 'completed' && data.outputResult?.assets) {
-        const mapping = pending.get(data.taskId);
-        if (mapping) {
-          const assets = data.outputResult.assets as string[];
-          // Update the specific character asset
-          const nextCharacters = [...charactersResult];
-          const char = nextCharacters[mapping.characterIndex];
-          if (char?.assets?.[mapping.assetIndex]) {
-            // Replace placeholder with first real asset URL
-            char.assets[mapping.assetIndex] = {
-              ...char.assets[mapping.assetIndex],
-              url: assets[0] || '/placeholder.png', // TODO: 保持 /placeholder.png 会触发 loading 动画
-            };
-            void persistCharacters(nextCharacters);
-          }
-          pending.delete(data.taskId);
+        const assets = data.outputResult.assets as string[];
+        // Update the specific character asset
+        const nextCharacters = [...charactersResult];
+        const char = nextCharacters[mapping.characterIndex];
+        if (char?.assets?.[mapping.assetIndex]) {
+          // Replace placeholder with first real asset URL
+          char.assets[mapping.assetIndex] = {
+            ...char.assets[mapping.assetIndex],
+            url: assets[0] || '/placeholder.png', // TODO: 保持 /placeholder.png 会触发 loading 动画
+          };
+          void persistCharacters(nextCharacters);
         }
+        pending.delete(data.taskId);
+      } else if (data.status === 'failed') {
+        // Rollback: remove the placeholder asset on failure
+        const nextCharacters = [...charactersResult];
+        nextCharacters[mapping.characterIndex].assets?.splice(mapping.assetIndex, 1);
+        void persistCharacters(nextCharacters);
+        pending.delete(data.taskId);
+        setError(data.error || '资产生成失败');
       }
     },
   });
@@ -576,18 +585,15 @@ export function CharactersStep() {
             const formData = new FormData();
             formData.append('file', blob, 'reference.png');
 
-            const uploadRes = await fetch(`${API_URL}/api/generation/assets/upload`, {
-              method: 'POST',
+            const { data: uploadRes } = await api.post('/generation/assets/upload', formData, {
               headers: {
-                Authorization: `Bearer ${token}`,
+                'Content-Type': 'multipart/form-data',
               },
-              body: formData,
             });
-
-            if (uploadRes.ok) {
-              const uploadData = await uploadRes.json();
-              referenceAssetIdRef.current = uploadData.assetId;
-              return uploadData.assetId;
+            if (uploadRes?.id && uploadRes?.assetContent) {
+              referenceAssetIdRef.current = uploadRes.id;
+              referenceAssetContentRef.current = uploadRes.assetContent;
+              return uploadRes.assetContent;
             }
           } catch (uploadError: any) {
             console.error(`Failed to upload reference image: ${uploadError.message}`);
@@ -599,6 +605,7 @@ export function CharactersStep() {
           setAssetForm(createEmptyAssetForm());
           setReferenceImage(null);
           referenceAssetIdRef.current = undefined;
+          referenceAssetContentRef.current = undefined;
         }}
         onSubmit={async () => {
           if (selectedCharacterIndex === null || !projectId) return;
@@ -647,9 +654,14 @@ export function CharactersStep() {
               },
               body: JSON.stringify({
                 projectId,
-                taskType: 'createRolePicture-t2i',
+                taskType: referenceImage || referenceAssetIdRef.current ? 'createRolePicture-i2i' : 'createRolePicture-t2i',
                 prompt: fullPrompt,
                 referenceAssetId: referenceAssetIdRef.current,
+                inParam: JSON.stringify({
+                  prompt: fullPrompt,
+                  resolution: '',
+                  image: referenceAssetContentRef.current,
+                }),
               }),
             });
 

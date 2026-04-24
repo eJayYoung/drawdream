@@ -15,6 +15,14 @@ import { GenerationService } from './generation.service';
 import { ComfyUIService } from '../common/comfyui.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 
+interface MulterFile {
+  fieldname: string;
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+}
+
 @ApiTags('AI生成')
 @Controller('generation')
 @UseGuards(JwtAuthGuard)
@@ -28,18 +36,10 @@ export class GenerationController {
   @Post('assets/upload')
   @ApiOperation({ summary: '上传资产到 OSS' })
   @UseInterceptors(FileInterceptor('file'))
-  async uploadAsset(@UploadedFile() file: Express.Multer.File) {
-    const result = await this.comfyUIService.uploadAsset(
-      new Blob([new Uint8Array(file.buffer)]),
-      file.originalname,
-      {
-        key: 'hm-yijie',
-        assetType: 'SENE_IMG',
-        assetDesc: '多角度视图参考图',
-      },
-    );
-    const assetId = result?.data?.id || result?.id;
-    return { assetId };
+  async uploadAsset(@UploadedFile() file: MulterFile) {
+    const result = await this.comfyUIService.uploadAsset(file.buffer, file.originalname);
+    console.log('Upload result:', result);
+    return result;
   }
 
   @Post('workflow')
@@ -55,6 +55,7 @@ export class GenerationController {
       episodeId?: string;
       storyboardId?: string;
       referenceAssetId?: string;
+      referenceAssetContent?: string;
     },
   ) {
     const result = await this.generationService.executeWorkflow({
@@ -66,6 +67,7 @@ export class GenerationController {
       episodeId: body.episodeId,
       storyboardId: body.storyboardId,
       referenceAssetId: body.referenceAssetId,
+      referenceAssetContent: body.referenceAssetContent,
     });
     return { taskId: result.taskId, status: result.status };
   }
