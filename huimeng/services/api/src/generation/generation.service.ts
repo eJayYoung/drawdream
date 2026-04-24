@@ -30,6 +30,7 @@ interface ExecuteWorkflowParams {
   storyboardId?: string;
   referenceAssetId?: string;
   referenceAssetContent?: string;
+  requestContext?: Record<string, any>;
 }
 
 @Injectable()
@@ -73,7 +74,7 @@ export class GenerationService {
    * 5. 返回 taskId
    */
   async executeWorkflow(params: ExecuteWorkflowParams): Promise<{ taskId: string; status: string }> {
-    const { userId, projectId, taskType, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId, referenceAssetContent } = params;
+    const { userId, projectId, taskType, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId, referenceAssetContent, requestContext } = params;
 
     // 1. 解析 inParam
     let inParam: InParam;
@@ -106,7 +107,7 @@ export class GenerationService {
     // 5. 提交到 ComfyUI 远程服务
     let comfyTaskId: string;
     try {
-      const submitResult = await this.comfyUIService.submitWorkflow(taskType, prompt, finalInParamStr, referenceAssetId);
+      const submitResult = await this.comfyUIService.submitWorkflow(taskType, prompt, finalInParamStr, requestContext);
       comfyTaskId = submitResult.prompt_id;
       this.logger.log(`Task submitted to ComfyUI, taskId: ${comfyTaskId}, projectId: ${projectId}, type: ${taskType}, resolution: ${resolution}`);
     } catch (error: any) {

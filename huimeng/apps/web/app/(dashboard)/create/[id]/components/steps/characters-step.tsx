@@ -661,6 +661,9 @@ export function CharactersStep() {
                   prompt: fullPrompt,
                   image: referenceAssetContentRef.current,
                 }),
+                requestContext: {
+                  'imageId-1': referenceAssetIdRef.current
+                }
               }),
             });
 

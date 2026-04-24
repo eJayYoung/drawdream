@@ -55,6 +55,7 @@ export class GenerationController {
       storyboardId?: string;
       referenceAssetId?: string;
       referenceAssetContent?: string;
+      requestContext?: Record<string, any>;
     },
   ) {
     const result = await this.generationService.executeWorkflow({
@@ -67,6 +68,7 @@ export class GenerationController {
       storyboardId: body.storyboardId,
       referenceAssetId: body.referenceAssetId,
       referenceAssetContent: body.referenceAssetContent,
+      requestContext: body.requestContext,
     });
     return { taskId: result.taskId, status: result.status };
   }

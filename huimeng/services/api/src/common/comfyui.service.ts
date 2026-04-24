@@ -109,16 +109,10 @@ export class ComfyUIService {
    * @param taskType 前端传入的 taskType (如 createRolePicture-t2i)
    * @param prompt 提示词
    * @param inParam JSON 字符串，包含 prompt, resolution, image 等参数
-   * @param referenceAssetId 可选的参考图资产ID，将传入 requestContext
+   * @param requestContext 可选的上下文参数，由前端组装传递
    */
-  async submitWorkflow(taskType: string, prompt: string, inParam: string, referenceAssetId?: string): Promise<{ prompt_id: string }> {
+  async submitWorkflow(taskType: string, prompt: string, inParam: string, requestContext: Record<string, any> = {}): Promise<{ prompt_id: string }> {
     try {
-      // 构建 requestContext
-      const requestContext: Record<string, any> = {};
-      if (referenceAssetId) {
-        requestContext['image'] = referenceAssetId;
-      }
-
       const request = {
         header: {
           key: this.apiKey,
