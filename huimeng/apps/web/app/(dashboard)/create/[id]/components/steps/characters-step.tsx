@@ -86,6 +86,7 @@ export function CharactersStep() {
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetForm, setAssetForm] = useState(createEmptyAssetForm());
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const referenceAssetIdRef = useRef<string | undefined>();
   // Pending asset taskId → { characterIndex, assetIndex } mapping
   const pendingAssetsRef = useRef<PendingMap>(new Map());
 
@@ -559,11 +560,45 @@ export function CharactersStep() {
         setAssetForm={setAssetForm}
         referenceImage={referenceImage}
         setReferenceImage={setReferenceImage}
+        onReferenceImageSelected={async (base64Data: string) => {
+          const token =
+            typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
+          try {
+            const base64Response = base64Data.split(',')[1];
+            const byteCharacters = atob(base64Response);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'image/png' });
+
+            const formData = new FormData();
+            formData.append('file', blob, 'reference.png');
+
+            const uploadRes = await fetch(`${API_URL}/api/generation/assets/upload`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+              body: formData,
+            });
+
+            if (uploadRes.ok) {
+              const uploadData = await uploadRes.json();
+              referenceAssetIdRef.current = uploadData.assetId;
+              return uploadData.assetId;
+            }
+          } catch (uploadError: any) {
+            console.error(`Failed to upload reference image: ${uploadError.message}`);
+          }
+        }}
         generatingAsset={false}
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
           setReferenceImage(null);
+          referenceAssetIdRef.current = undefined;
         }}
         onSubmit={async () => {
           if (selectedCharacterIndex === null || !projectId) return;
@@ -604,7 +639,7 @@ export function CharactersStep() {
 
           // 3. Submit generation task
           try {
-            const res = await fetch(`${API_URL}/api/generation/queue`, {
+            const res = await fetch(`${API_URL}/api/generation/workflow`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -614,11 +649,7 @@ export function CharactersStep() {
                 projectId,
                 taskType: 'createRolePicture-t2i',
                 prompt: fullPrompt,
-                inputParams: {
-                  reference_image: referenceImage,
-                  view_width: '720',
-                  view_height: '1280',
-                },
+                referenceAssetId: referenceAssetIdRef.current,
               }),
             });
 

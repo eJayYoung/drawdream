@@ -19,6 +19,7 @@ type AssetGeneratorModalProps = {
   setAssetForm: Dispatch<SetStateAction<AssetForm>>;
   referenceImage: string | null;
   setReferenceImage: Dispatch<SetStateAction<string | null>>;
+  onReferenceImageSelected?: (base64Data: string) => Promise<string | undefined>;
   generatingAsset: boolean;
   onClose: () => void;
   onSubmit: () => Promise<void>;
@@ -32,6 +33,7 @@ export function AssetGeneratorModal({
   setAssetForm,
   referenceImage,
   setReferenceImage,
+  onReferenceImageSelected,
   generatingAsset,
   onClose,
   onSubmit,
@@ -140,12 +142,17 @@ export function AssetGeneratorModal({
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(event) => {
+                  onChange={async (event) => {
                     const file = event.target.files?.[0];
                     if (!file) return;
                     const reader = new FileReader();
-                    reader.onload = (loadEvent) =>
-                      setReferenceImage(loadEvent.target?.result as string);
+                    reader.onload = async (loadEvent) => {
+                      const base64 = loadEvent.target?.result as string;
+                      setReferenceImage(base64);
+                      if (onReferenceImageSelected) {
+                        await onReferenceImageSelected(base64);
+                      }
+                    };
                     reader.readAsDataURL(file);
                   }}
                 />
