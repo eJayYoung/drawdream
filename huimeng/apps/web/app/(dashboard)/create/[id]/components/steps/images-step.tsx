@@ -268,6 +268,7 @@ export function ImagesStep() {
     setImagesResult,
     saveProjectProgress,
     updateStepStatus,
+    charactersResult,
   } = useCreateWorkflowStore((state) => ({
     projectId: state.projectId,
     project: state.project,
@@ -279,6 +280,7 @@ export function ImagesStep() {
     setImagesResult: state.setImagesResult,
     saveProjectProgress: state.saveProjectProgress,
     updateStepStatus: state.updateStepStatus,
+    charactersResult: state.charactersResult,
   }));
 
   const storyboards = useMemo(
@@ -316,6 +318,88 @@ export function ImagesStep() {
   const [selectedAiSuggestionIds, setSelectedAiSuggestionIds] = useState<
     string[]
   >([]);
+
+  // @ mention for character assets
+  const [showCharacterDropdown, setShowCharacterDropdown] = useState(false);
+  const [characterDropdownPosition, setCharacterDropdownPosition] = useState({ top: 0, left: 0 });
+  const [characterDropdownIndex, setCharacterDropdownIndex] = useState(-1);
+  // Track selected character assets by @ mention: { displayText: "@角色名", imageUrl: "..." }
+  const [characterMentions, setCharacterMentions] = useState<{ displayText: string; imageUrl: string }[]>([]);
+
+  // Get all character assets for dropdown
+  const characterAssets = useMemo(() => {
+    const assets: { characterName: string; imageUrl: string; assetIndex: number }[] = [];
+    charactersResult.forEach((char: any, charIndex: number) => {
+      if (char.assets && char.assets.length > 0) {
+        char.assets.forEach((asset: any, assetIndex: number) => {
+          if (asset.url && asset.url !== '/placeholder.png') {
+            assets.push({
+              characterName: char.name || `角色${charIndex + 1}`,
+              imageUrl: asset.url,
+              assetIndex,
+            });
+          }
+        });
+      }
+    });
+    return assets;
+  }, [charactersResult]);
+
+  const handleGeneratorPromptChange = (value: string) => {
+    setGeneratorPrompt(value);
+
+    // Check if user typed @ to show character dropdown
+    const lastAtIndex = value.lastIndexOf('@');
+
+    if (lastAtIndex !== -1) {
+      // Check if there's text after @ (filtering)
+      const textAfterAt = value.slice(lastAtIndex + 1);
+      if (textAfterAt.includes(' ')) {
+        // If there's a space after @, close dropdown and treat @ as regular text
+        setShowCharacterDropdown(false);
+      } else {
+        // Show dropdown for @ mention
+        setShowCharacterDropdown(true);
+        setCharacterDropdownIndex(0);
+      }
+    } else {
+      setShowCharacterDropdown(false);
+    }
+  };
+
+  const handleSelectCharacter = (charAsset: typeof characterAssets[0]) => {
+    // Find the @ that was just typed (the last unclosed @)
+    const lastAtIndex = generatorPrompt.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      // Check that there's no space between @ and cursor
+      const textAfterAt = generatorPrompt.slice(lastAtIndex + 1);
+      if (!textAfterAt.includes(' ')) {
+        const before = generatorPrompt.slice(0, lastAtIndex);
+        const newPrompt = before + '@' + charAsset.characterName + ' ';
+        setGeneratorPrompt(newPrompt);
+        // Store the character mention with image URL
+        setCharacterMentions(prev => [...prev, { displayText: `@${charAsset.characterName}`, imageUrl: charAsset.imageUrl }]);
+      }
+    }
+    setShowCharacterDropdown(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!showCharacterDropdown || characterAssets.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setCharacterDropdownIndex(prev => Math.min(prev + 1, characterAssets.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setCharacterDropdownIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && characterDropdownIndex >= 0) {
+      e.preventDefault();
+      handleSelectCharacter(characterAssets[characterDropdownIndex]);
+    } else if (e.key === 'Escape') {
+      setShowCharacterDropdown(false);
+    }
+  };
 
   useEffect(() => {
     const hasGenerating = keyframePoints.some((point) =>
@@ -395,6 +479,7 @@ export function ImagesStep() {
     setGeneratorNotes(selectedPoint.notes);
     setGeneratorCount(selectedPoint.generateCount || 1);
     setReferenceDrafts([]);
+    setCharacterMentions([]);
   }, [generatorOpen, selectedPoint?.id]);
 
   const generatingCount = keyframePoints.reduce(
@@ -988,6 +1073,7 @@ export function ImagesStep() {
       [
         selectedStoryboard.imageUrl,
         ...referenceDrafts.map((item) => item.dataUrl),
+        ...characterMentions.map((m) => m.imageUrl),
       ].filter(Boolean),
     );
 
@@ -1769,14 +1855,37 @@ export function ImagesStep() {
                 <div className="space-y-4">
                   <label className="block space-y-1 text-sm">
                     <span className="text-muted-foreground">提示词</span>
-                    <textarea
-                      value={generatorPrompt}
-                      onChange={(event) =>
-                        setGeneratorPrompt(event.target.value)
-                      }
-                      placeholder="描述这个关键帧的画面内容、人物状态、镜头重点"
-                      className="min-h-[120px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
+                    <div className="relative">
+                      <textarea
+                        value={generatorPrompt}
+                        onChange={(event) =>
+                          handleGeneratorPromptChange(event.target.value)
+                        }
+                        onKeyDown={handleKeyDown}
+                        placeholder="描述这个关键帧的画面内容、人物状态、镜头重点，输入@选择角色资产"
+                        className="min-h-[120px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      {showCharacterDropdown && characterAssets.length > 0 && (
+                        <div className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-card shadow-lg">
+                          {characterAssets.map((charAsset, index) => (
+                            <button
+                              key={`${charAsset.characterName}-${charAsset.assetIndex}`}
+                              onClick={() => handleSelectCharacter(charAsset)}
+                              className={`flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted ${
+                                index === characterDropdownIndex ? 'bg-muted' : ''
+                              }`}
+                            >
+                              <img
+                                src={charAsset.imageUrl}
+                                alt={charAsset.characterName}
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                              <span className="text-sm">{charAsset.characterName}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </label>
 
                   <label className="block space-y-1 text-sm">

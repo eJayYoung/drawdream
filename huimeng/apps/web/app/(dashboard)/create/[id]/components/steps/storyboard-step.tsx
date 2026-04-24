@@ -724,6 +724,107 @@ export function StoryboardStep() {
     string | null
   >(null);
 
+  // @ mention for character and scene assets in image prompt
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionDropdownIndex, setMentionDropdownIndex] = useState(-1);
+  // Track selected assets by @ mention: { displayText: "@名称", imageUrl: "...", type: "character" | "scene" }
+  const [mentionAssets, setMentionAssets] = useState<{ displayText: string; imageUrl: string; type: string }[]>([]);
+
+  // Get all character and scene assets for @ mention dropdown
+  const mentionOptions = useMemo(() => {
+    const options: { id: string; name: string; imageUrl: string; type: string }[] = [];
+
+    // Add character assets
+    charactersResult.forEach((char: any, charIndex: number) => {
+      if (char.assets && char.assets.length > 0) {
+        char.assets.forEach((asset: any, assetIndex: number) => {
+          if (asset.url && asset.url !== '/placeholder.png') {
+            options.push({
+              id: `char-${charIndex}-${assetIndex}`,
+              name: char.name || `角色${charIndex + 1}`,
+              imageUrl: asset.url,
+              type: 'character',
+            });
+          }
+        });
+      }
+    });
+
+    // Add scene assets
+    scenesResult.forEach((scene: any, sceneIndex: number) => {
+      if (scene.assets && scene.assets.length > 0) {
+        scene.assets.forEach((asset: any, assetIndex: number) => {
+          if (asset.url && asset.url !== '/placeholder.png') {
+            options.push({
+              id: `scene-${sceneIndex}-${assetIndex}`,
+              name: scene.name || `场景${sceneIndex + 1}`,
+              imageUrl: asset.url,
+              type: 'scene',
+            });
+          }
+        });
+      }
+    });
+
+    return options;
+  }, [charactersResult, scenesResult]);
+
+  const handleImagePromptChange = (value: string) => {
+    // Check if user typed @ to show mention dropdown
+    const lastAtIndex = value.lastIndexOf('@');
+
+    if (lastAtIndex !== -1) {
+      // Check if there's text after @ (filtering)
+      const textAfterAt = value.slice(lastAtIndex + 1);
+      if (textAfterAt.includes(' ')) {
+        // If there's a space after @, close dropdown and treat @ as regular text
+        setShowMentionDropdown(false);
+      } else {
+        // Show dropdown for @ mention
+        setShowMentionDropdown(true);
+        setMentionDropdownIndex(0);
+      }
+    } else {
+      setShowMentionDropdown(false);
+    }
+  };
+
+  const handleSelectMention = (option: typeof mentionOptions[0]) => {
+    // Find the @ that was just typed (the last unclosed @)
+    const currentPrompt = activeStoryboard?.imagePrompt || '';
+    const lastAtIndex = currentPrompt.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      // Check that there's no space between @ and cursor
+      const textAfterAt = currentPrompt.slice(lastAtIndex + 1);
+      if (!textAfterAt.includes(' ')) {
+        const before = currentPrompt.slice(0, lastAtIndex);
+        const typePrefix = option.type === 'scene' ? '[场景]' : '';
+        const newPrompt = before + '@' + typePrefix + option.name + ' ';
+        updateDraft({ imagePrompt: newPrompt });
+        // Store the mention with image URL
+        setMentionAssets(prev => [...prev, { displayText: `@${option.name}`, imageUrl: option.imageUrl, type: option.type }]);
+      }
+    }
+    setShowMentionDropdown(false);
+  };
+
+  const handleMentionKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!showMentionDropdown || mentionOptions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setMentionDropdownIndex(prev => Math.min(prev + 1, mentionOptions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setMentionDropdownIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && mentionDropdownIndex >= 0) {
+      e.preventDefault();
+      handleSelectMention(mentionOptions[mentionDropdownIndex]);
+    } else if (e.key === 'Escape') {
+      setShowMentionDropdown(false);
+    }
+  };
+
   useEffect(() => {
     if (storyboards.length === 0) {
       setSelectedStoryboardId(null);
@@ -751,6 +852,8 @@ export function StoryboardStep() {
   useEffect(() => {
     setDraftStoryboard(selectedStoryboard ? { ...selectedStoryboard } : null);
     setHasUnsavedChanges(false);
+    setShowMentionDropdown(false);
+    setMentionAssets([]);
   }, [selectedStoryboard?.id, selectedStoryboard?.updatedAt]);
 
   const activeStoryboard = draftStoryboard ?? selectedStoryboard;
@@ -1246,6 +1349,7 @@ export function StoryboardStep() {
       [
         ...selectedSceneAssets.map((asset) => asset.url),
         ...selectedCharacterAssets.map((asset) => asset.url),
+        ...mentionAssets.map((m) => m.imageUrl),
       ].filter(Boolean),
     ).slice(0, 3);
 
@@ -2047,13 +2151,38 @@ export function StoryboardStep() {
                           <span className="text-muted-foreground">
                             正向提示词
                           </span>
-                          <textarea
-                            value={activeStoryboard.imagePrompt}
-                            onChange={(event) =>
-                              updateDraft({ imagePrompt: event.target.value })
-                            }
-                            className="min-h-[160px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
+                          <div className="relative">
+                            <textarea
+                              value={activeStoryboard.imagePrompt}
+                              onChange={(event) => {
+                                handleImagePromptChange(event.target.value);
+                                updateDraft({ imagePrompt: event.target.value });
+                              }}
+                              onKeyDown={handleMentionKeyDown}
+                              placeholder="输入@选择角色或场景资产作为参考"
+                              className="min-h-[160px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                            {showMentionDropdown && mentionOptions.length > 0 && (
+                              <div className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-card shadow-lg">
+                                {mentionOptions.map((option, index) => (
+                                  <button
+                                    key={option.id}
+                                    onClick={() => handleSelectMention(option)}
+                                    className={`flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted ${
+                                      index === mentionDropdownIndex ? 'bg-muted' : ''
+                                    }`}
+                                  >
+                                    <img
+                                      src={option.imageUrl}
+                                      alt={option.name}
+                                      className="h-8 w-8 rounded object-cover"
+                                    />
+                                    <span className="text-sm">{option.type === 'scene' ? '[场景] ' : ''}{option.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </label>
                         <label className="space-y-1 text-sm">
                           <span className="text-muted-foreground">

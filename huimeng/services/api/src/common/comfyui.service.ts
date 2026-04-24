@@ -135,7 +135,7 @@ export class ComfyUIService {
       const response = await axios.post<ApiResponse>(
         `${this.baseUrl}/api/render/call`,
         request,
-        { timeout: 10000 }
+        { timeout: 1800000 }
       );
 
       this.logger.log(`submitWorkflow response: ${JSON.stringify(response.data)}`);
@@ -190,13 +190,17 @@ export class ComfyUIService {
       const response = await axios.post(
         `${this.baseUrl}/api/render/query`,
         request,
-        { timeout: 10000 }
+        { timeout: 1800000 }
       );
 
       this.logger.log(`Query response: ${JSON.stringify(response.data)}`);
 
       const data = response.data;
       const body = data?.body || {};
+
+      this.logger.log(`[ComfyUI DEBUG] body: ${JSON.stringify(body)}`);
+      this.logger.log(`[ComfyUI DEBUG] body.outParam: ${JSON.stringify(body?.outParam)}`);
+      this.logger.log(`[ComfyUI DEBUG] body.taskStatus: ${body?.taskStatus}`);
 
       // 解析 outParam (可能是字符串或对象)
       let outParam: any = {};
@@ -231,6 +235,7 @@ export class ComfyUIService {
           }
         }
       }
+      this.logger.log(`[ComfyUI DEBUG] extracted images: ${JSON.stringify(images)}`);
 
       return {
         status,

@@ -12,7 +12,6 @@ import {
   Trash2,
   X,
   ZoomIn,
-  Panorama,
 } from 'lucide-react';
 import { AssetGeneratorModal } from '../asset-generator-modal';
 import { ErrorBanner } from '../error-banner';
@@ -465,22 +464,22 @@ export function ScenesStep() {
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-auto p-3">
+                <div className="flex-1 overflow-auto p-3" style={{ maxHeight: 'calc(100vh - 200px)' }}>
                   {(activeScene.assets || []).length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-3">
                       {(activeScene.assets || []).map((asset: any, index: number) => (
                         <div key={asset.id || index} className="overflow-hidden rounded-lg border">
-                          <div className="relative aspect-square bg-muted">
+                          <div className="relative aspect-video bg-muted">
                             {asset.type === 'image' ? (
                               asset.url && asset.url !== '/placeholder.png' ? (
                                 <div
-                                  className="group relative h-full cursor-pointer"
+                                  className="group relative flex h-full cursor-pointer items-center justify-center"
                                   onClick={() => setPreviewImage(asset.url)}
                                 >
                                   <img
                                     src={asset.url}
                                     alt={asset.prompt}
-                                    className="h-full w-full object-cover"
+                                    className="max-h-full max-w-full object-contain"
                                   />
                                   <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 transition-colors group-hover:bg-black/30">
                                     <button
@@ -490,7 +489,7 @@ export function ScenesStep() {
                                       }}
                                       className="rounded-lg bg-black/50 p-2 text-white hover:bg-black/70"
                                     >
-                                      <Panorama size={18} />
+                                      <MapPin size={18} />
                                     </button>
                                     <ZoomIn
                                       size={24}

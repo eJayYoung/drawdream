@@ -15,7 +15,7 @@ interface PollState {
 }
 
 interface InParam {
-  prompt: string;
+  prompt?: string;
   resolution?: string;
   image?: string;
 }
@@ -96,9 +96,8 @@ export class GenerationService {
     const aspectRatio = project?.aspectRatio || "16:9";
     const resolution = inParam.resolution || this.getResolution(aspectRatio);
 
-    // 4. 重新组装 inParam（补充 resolution，image 优先用 referenceAssetContent）
+    // 4. 重新组装 inParam（只放 resolution，不放 prompt）
     const finalInParam: InParam = {
-      prompt: inParam.prompt || prompt,
       resolution,
     };
 

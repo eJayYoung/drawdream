@@ -234,7 +234,7 @@ export function CharactersStep() {
         </div>
       )}
 
-      <div className="flex h-[calc(100vh-280px)] gap-4">
+      <div className="flex h-full gap-4">
         <div className="flex w-[356px] flex-col overflow-hidden rounded-lg border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
           <div className="flex items-center justify-between neon-border-bottom neon-header p-3">
             <span className="text-sm font-medium">角色列表 ({charactersResult.length})</span>
@@ -532,7 +532,7 @@ export function CharactersStep() {
               </div>
 
               {/* Right: Asset Management */}
-              <div className="flex w-[356px] flex-col overflow-hidden">
+              <div className="flex flex-1 flex-col overflow-hidden">
                 <div className="flex items-center justify-between neon-border-bottom neon-header p-3 shrink-0">
                   <span className="text-sm font-medium">角色资产</span>
                   <button
@@ -548,22 +548,22 @@ export function CharactersStep() {
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-auto p-3">
+                <div className="flex-1 overflow-auto p-3" style={{ maxHeight: 'calc(100vh - 200px)' }}>
                   {(selectedCharacter.assets || []).length > 0 ? (
                     <div className="space-y-3">
                       {(selectedCharacter.assets || []).map((asset: any, index: number) => (
                         <div key={asset.id || index} className="overflow-hidden rounded-lg border">
-                          <div className="relative aspect-square bg-muted">
+                          <div className="relative aspect-video bg-muted">
                             {asset.type === 'image' ? (
                               asset.url && asset.url !== '/placeholder.png' ? (
                                 <div
-                                  className="group relative h-full cursor-pointer"
+                                  className="group relative flex h-full cursor-pointer items-center justify-center"
                                   onClick={() => setPreviewImage(asset.url)}
                                 >
                                   <img
                                     src={asset.url}
                                     alt={asset.prompt}
-                                    className="h-full w-full object-cover"
+                                    className="max-h-full max-w-full object-contain"
                                   />
                                   <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
                                     <ZoomIn
@@ -991,14 +991,6 @@ export function CharactersStep() {
                 projectId,
                 taskType: referenceImage || referenceAssetIdRef.current ? 'createRolePicture-i2i' : 'createRolePicture-t2i',
                 prompt: fullPrompt,
-                referenceAssetId: referenceAssetIdRef.current,
-                inParam: JSON.stringify({
-                  prompt: fullPrompt,
-                  image: referenceAssetContentRef.current,
-                }),
-                requestContext: {
-                  'imageId-1': referenceAssetIdRef.current
-                }
               }),
             });
 
