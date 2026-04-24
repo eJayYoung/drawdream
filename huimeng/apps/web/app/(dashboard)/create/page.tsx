@@ -10,18 +10,12 @@ const aspectRatios = [
   { value: '1:1', label: '1:1 方屏', desc: '适合社交媒体' },
 ];
 
-const projectTypes = [
-  { value: 'single', label: '单部作品', desc: '电影、宣传片、单集创意片等', icon: '🎬' },
-  { value: 'series', label: '分集作品', desc: '多集连续剧', icon: '📺' },
-];
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function CreateProjectPage() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [aspectRatio, setAspectRatio] = useState('16:9');
-  const [projectType, setProjectType] = useState('single');
   const [loading, setLoading] = useState(false);
 
   const getToken = () => {
@@ -54,7 +48,7 @@ export default function CreateProjectPage() {
           name: name.trim(),
           description: '',
           aspectRatio,
-          projectType,
+          projectType: 'single',
         }),
       });
 
@@ -90,28 +84,6 @@ export default function CreateProjectPage() {
           placeholder="给你的短剧起个名字"
           className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
         />
-      </div>
-
-      {/* Project Type */}
-      <div className="space-y-3">
-        <label className="block text-sm font-medium">作品类型</label>
-        <div className="grid grid-cols-2 gap-4">
-          {projectTypes.map((type) => (
-            <button
-              key={type.value}
-              onClick={() => setProjectType(type.value)}
-              className={`p-4 border rounded-lg text-left transition-all ${
-                projectType === type.value
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary'
-                  : 'hover:border-primary/50'
-              }`}
-            >
-              <span className="text-2xl mb-2 block">{type.icon}</span>
-              <p className="font-medium text-sm">{type.label}</p>
-              <p className="text-xs text-muted-foreground">{type.desc}</p>
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Aspect Ratio */}

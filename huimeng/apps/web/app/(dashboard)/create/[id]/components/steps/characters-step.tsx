@@ -21,6 +21,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 type PendingMap = Map<string, { characterIndex: number; assetIndex: number }>;
 
+type AssetForm = {
+  type: 'image' | 'video';
+  prompt: string;
+  tags: string;
+  angle: string;
+  shotSize: string;
+};
+
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const base64Url = token.split('.')[1];
@@ -43,9 +51,15 @@ const createEmptyCharacterForm = () => ({
   personality: '',
   backstory: '',
   catchphrase: '',
+  bodyType: '',
+  hairstyle: '',
+  clothing: '',
+  equipment: '',
+  appearance: '',
+  voiceType: '',
 });
 
-const createEmptyAssetForm = () => ({
+const createEmptyAssetForm = (): AssetForm => ({
   type: 'image',
   prompt: '',
   tags: '',
@@ -171,8 +185,27 @@ export function CharactersStep() {
       personality: character.personality || '',
       backstory: character.backstory || '',
       catchphrase: character.catchphrase || '',
+      bodyType: character.bodyType || '',
+      hairstyle: character.hairstyle || '',
+      clothing: character.clothing || '',
+      equipment: character.equipment || '',
+      appearance: character.appearance || '',
+      voiceType: character.voiceType || '',
     });
-    setShowCharacterForm(true);
+  };
+
+  const handleSaveCharacterForm = async () => {
+    if (selectedCharacterIndex === null || !characterForm.name.trim()) {
+      setError('请先输入角色名称');
+      return;
+    }
+
+    const nextCharacters = [...charactersResult];
+    nextCharacters[selectedCharacterIndex] = {
+      ...nextCharacters[selectedCharacterIndex],
+      ...characterForm,
+    };
+    await persistCharacters(nextCharacters);
   };
 
   const selectedCharacter =
@@ -192,8 +225,8 @@ export function CharactersStep() {
       )}
 
       <div className="flex h-[calc(100vh-280px)] gap-4">
-        <div className="flex w-2/5 flex-col overflow-hidden rounded-lg border">
-          <div className="flex items-center justify-between border-b bg-muted/30 p-3">
+        <div className="flex w-[356px] flex-col overflow-hidden rounded-lg border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+          <div className="flex items-center justify-between neon-border-bottom neon-header p-3">
             <span className="text-sm font-medium">角色列表 ({charactersResult.length})</span>
             <div className="flex items-center gap-2">
               <button
@@ -224,7 +257,10 @@ export function CharactersStep() {
                   role="button"
                   tabIndex={0}
                   key={character.id || index}
-                  onClick={() => setSelectedCharacterIndex(index)}
+                  onClick={() => {
+                    setSelectedCharacterIndex(index);
+                    openEditForm(index);
+                  }}
                   onKeyDown={(e) => e.key === 'Enter' && setSelectedCharacterIndex(index)}
                   className={`w-full cursor-pointer rounded-lg border p-3 text-left transition-colors ${
                     selectedCharacterIndex === index
@@ -280,60 +316,231 @@ export function CharactersStep() {
           </div>
         </div>
 
-        <div className="flex w-3/5 flex-col overflow-hidden rounded-lg border">
+        <div className="flex flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
           {selectedCharacter ? (
-            <>
-              <div className="flex items-center justify-between border-b bg-muted/30 p-3">
-                <div>
-                  <div className="font-medium">{selectedCharacter.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {selectedCharacter.gender || '未指定'}
+            <div className="flex h-full">
+              {/* Left: Character Detail / Edit Form */}
+              <div className="flex w-[420px] flex-col border-r overflow-hidden">
+                <div className="flex items-center justify-between neon-border-bottom neon-header p-3 shrink-0">
+                  <div>
+                    <div className="font-medium">{selectedCharacter.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {selectedCharacter.gender || '未指定'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleSaveCharacterForm}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+                  >
+                    保存
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-auto p-4">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">名称</label>
+                        <input
+                          type="text"
+                          value={characterForm.name}
+                          onChange={(event) =>
+                            setCharacterForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">性别</label>
+                        <select
+                          value={characterForm.gender}
+                          onChange={(event) =>
+                            setCharacterForm((current) => ({
+                              ...current,
+                              gender: event.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="男">男</option>
+                          <option value="女">女</option>
+                          <option value="其他">其他</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">人物特点</label>
+                      <input
+                        type="text"
+                        value={characterForm.personality}
+                        onChange={(event) =>
+                          setCharacterForm((current) => ({
+                            ...current,
+                            personality: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">体型</label>
+                        <input
+                          type="text"
+                          value={characterForm.bodyType}
+                          onChange={(event) =>
+                            setCharacterForm((current) => ({
+                              ...current,
+                              bodyType: event.target.value,
+                            }))
+                          }
+                          placeholder="如：高大/矮小/中等/健壮"
+                          className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">发型</label>
+                        <input
+                          type="text"
+                          value={characterForm.hairstyle}
+                          onChange={(event) =>
+                            setCharacterForm((current) => ({
+                              ...current,
+                              hairstyle: event.target.value,
+                            }))
+                          }
+                          placeholder="如：短发/长发/卷发"
+                          className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">服饰</label>
+                        <input
+                          type="text"
+                          value={characterForm.clothing}
+                          onChange={(event) =>
+                            setCharacterForm((current) => ({
+                              ...current,
+                              clothing: event.target.value,
+                            }))
+                          }
+                          placeholder="如：西装/休闲装/古装"
+                          className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">装备</label>
+                        <input
+                          type="text"
+                          value={characterForm.equipment}
+                          onChange={(event) =>
+                            setCharacterForm((current) => ({
+                              ...current,
+                              equipment: event.target.value,
+                            }))
+                          }
+                          placeholder="如：背包/雨伞/手枪"
+                          className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">配音类型</label>
+                      <select
+                        value={characterForm.voiceType}
+                        onChange={(event) =>
+                          setCharacterForm((current) => ({
+                            ...current,
+                            voiceType: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">请选择</option>
+                        <option value="温柔">温柔</option>
+                        <option value="浑厚">浑厚</option>
+                        <option value="甜美">甜美</option>
+                        <option value="低沉">低沉</option>
+                        <option value="清澈">清澈</option>
+                        <option value="沙哑">沙哑</option>
+                        <option value="元气">元气</option>
+                        <option value="成熟">成熟</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">口头禅</label>
+                      <input
+                        type="text"
+                        value={characterForm.catchphrase}
+                        onChange={(event) =>
+                          setCharacterForm((current) => ({
+                            ...current,
+                            catchphrase: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">外观描述（AI绘图用）</label>
+                      <textarea
+                        value={characterForm.appearance}
+                        onChange={(event) =>
+                          setCharacterForm((current) => ({
+                            ...current,
+                            appearance: event.target.value,
+                          }))
+                        }
+                        placeholder="详细描述外貌特征，用于AI生成角色图片"
+                        className="min-h-[80px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">背景故事</label>
+                      <textarea
+                        value={characterForm.backstory}
+                        onChange={(event) =>
+                          setCharacterForm((current) => ({
+                            ...current,
+                            backstory: event.target.value,
+                          }))
+                        }
+                        className="min-h-[100px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => openEditForm(selectedCharacterIndex!)}
-                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-muted"
-                >
-                  编辑信息
-                </button>
               </div>
 
-              <div className="flex-1 space-y-4 overflow-auto p-4">
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">人物特点：</span>
-                    <span>{selectedCharacter.personality || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">口头禅：</span>
-                    <span>{selectedCharacter.catchphrase || '-'}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">背景：</span>
-                    <p className="mt-1 text-muted-foreground">
-                      {selectedCharacter.backstory || '-'}
-                    </p>
-                  </div>
+              {/* Right: Asset Management */}
+              <div className="flex w-[356px] flex-col overflow-hidden">
+                <div className="flex items-center justify-between neon-border-bottom neon-header p-3 shrink-0">
+                  <span className="text-sm font-medium">角色资产</span>
+                  <button
+                    onClick={() => {
+                      setAssetForm(createEmptyAssetForm());
+                      setReferenceImage(null);
+                      setShowAssetForm(true);
+                    }}
+                    className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+                  >
+                    <Plus size={14} />
+                    新建资产
+                  </button>
                 </div>
 
-                <div className="border-t pt-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="text-sm font-medium">角色资产</span>
-                    <button
-                      onClick={() => {
-                        setAssetForm(createEmptyAssetForm());
-                        setReferenceImage(null);
-                        setShowAssetForm(true);
-                      }}
-                      className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-                    >
-                      <Plus size={14} />
-                      新建资产
-                    </button>
-                  </div>
-
+                <div className="flex-1 overflow-auto p-3">
                   {(selectedCharacter.assets || []).length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-3">
                       {(selectedCharacter.assets || []).map((asset: any, index: number) => (
                         <div key={asset.id || index} className="overflow-hidden rounded-lg border">
                           <div className="relative aspect-square bg-muted">
@@ -388,13 +595,13 @@ export function CharactersStep() {
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-lg border-2 border-dashed py-10 text-center text-sm text-muted-foreground">
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                       暂无角色资产
                     </div>
                   )}
                 </div>
               </div>
-            </>
+            </div>
           ) : (
             <div className="flex flex-1 items-center justify-center text-muted-foreground">
               <div className="text-center">
@@ -408,7 +615,7 @@ export function CharactersStep() {
 
       {showCharacterForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-lg rounded-xl bg-card shadow-xl">
+          <div className="w-full max-w-lg rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b p-4">
               <h3 className="text-lg font-medium">
                 {editingCharacterIndex !== null ? '编辑角色' : '新建角色'}
@@ -499,6 +706,108 @@ export function CharactersStep() {
                   className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">体型</label>
+                  <input
+                    type="text"
+                    value={characterForm.bodyType}
+                    onChange={(event) =>
+                      setCharacterForm((current) => ({
+                        ...current,
+                        bodyType: event.target.value,
+                      }))
+                    }
+                    placeholder="如：高大/矮小/中等/健壮"
+                    className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">发型</label>
+                  <input
+                    type="text"
+                    value={characterForm.hairstyle}
+                    onChange={(event) =>
+                      setCharacterForm((current) => ({
+                        ...current,
+                        hairstyle: event.target.value,
+                      }))
+                    }
+                    placeholder="如：短发/长发/卷发"
+                    className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">服饰</label>
+                  <input
+                    type="text"
+                    value={characterForm.clothing}
+                    onChange={(event) =>
+                      setCharacterForm((current) => ({
+                        ...current,
+                        clothing: event.target.value,
+                      }))
+                    }
+                    placeholder="如：西装/休闲装/古装"
+                    className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">装备</label>
+                  <input
+                    type="text"
+                    value={characterForm.equipment}
+                    onChange={(event) =>
+                      setCharacterForm((current) => ({
+                        ...current,
+                        equipment: event.target.value,
+                      }))
+                    }
+                    placeholder="如：背包/雨伞/手枪"
+                    className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">外观描述（AI绘图用）</label>
+                <textarea
+                  value={characterForm.appearance}
+                  onChange={(event) =>
+                    setCharacterForm((current) => ({
+                      ...current,
+                      appearance: event.target.value,
+                    }))
+                  }
+                  placeholder="详细描述外貌特征，用于AI生成角色图片"
+                  className="min-h-[80px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">配音类型</label>
+                <select
+                  value={characterForm.voiceType}
+                  onChange={(event) =>
+                    setCharacterForm((current) => ({
+                      ...current,
+                      voiceType: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">请选择</option>
+                  <option value="温柔">温柔</option>
+                  <option value="浑厚">浑厚</option>
+                  <option value="甜美">甜美</option>
+                  <option value="低沉">低沉</option>
+                  <option value="清澈">清澈</option>
+                  <option value="沙哑">沙哑</option>
+                  <option value="元气">元气</option>
+                  <option value="成熟">成熟</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 border-t p-4">
@@ -560,6 +869,7 @@ export function CharactersStep() {
         referenceImage={referenceImage}
         setReferenceImage={setReferenceImage}
         generatingAsset={false}
+        characterGender={characterForm.gender}
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
@@ -572,10 +882,35 @@ export function CharactersStep() {
 
           const token =
             typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
-          const promptParts = [assetForm.shotSize, assetForm.angle, assetForm.prompt].filter(
-            Boolean,
-          );
-          const fullPrompt = promptParts.join(', ');
+
+          // Get character basic info
+          const character = charactersResult[selectedCharacterIndex];
+          const characterInfo = {
+            name: character.name || '',
+            gender: character.gender || '',
+            appearance: character.appearance || '',
+            bodyType: character.bodyType || '',
+            hairstyle: character.hairstyle || '',
+            clothing: character.clothing || '',
+            equipment: character.equipment || '',
+            voiceType: character.voiceType || '',
+            personality: character.personality || '',
+          };
+
+          // Build full prompt with character info
+          const characterPrompt = [
+            characterInfo.name && `角色名: ${characterInfo.name}`,
+            characterInfo.gender && `性别: ${characterInfo.gender}`,
+            characterInfo.bodyType && `体型: ${characterInfo.bodyType}`,
+            characterInfo.hairstyle && `发型: ${characterInfo.hairstyle}`,
+            characterInfo.clothing && `服饰: ${characterInfo.clothing}`,
+            characterInfo.equipment && `装备: ${characterInfo.equipment}`,
+            characterInfo.appearance && `外观: ${characterInfo.appearance}`,
+            characterInfo.personality && `性格: ${characterInfo.personality}`,
+            characterInfo.voiceType && `配音: ${characterInfo.voiceType}`,
+          ].filter(Boolean).join(', ');
+
+          const fullPrompt = `${characterPrompt}${assetForm.prompt ? ', ' + assetForm.prompt : ''}`;
 
           // 1. Add pending asset with placeholder — don't block on generation
           const nextCharacters = [...charactersResult];
@@ -644,7 +979,7 @@ export function CharactersStep() {
 
       {showScriptSelect && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-xl bg-card shadow-xl">
+          <div className="w-full max-w-md rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b p-4">
               <h3 className="text-lg font-medium">选择剧本</h3>
               <button
@@ -741,7 +1076,7 @@ export function CharactersStep() {
 
       {showCharacterPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-card shadow-xl">
+          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b p-4">
               <div>
                 <h3 className="text-lg font-medium">选择要保留的角色</h3>

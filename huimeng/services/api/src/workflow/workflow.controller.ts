@@ -7,6 +7,7 @@ import {
   Param,
   UseGuards,
   Request,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -17,6 +18,7 @@ import { WorkflowService } from './workflow.service';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class WorkflowController {
+  private readonly logger = new Logger(WorkflowController.name);
   constructor(private readonly workflowService: WorkflowService) {}
 
   @Post('projects/:projectId/script')
@@ -108,6 +110,22 @@ export class WorkflowController {
     }));
   }
 
+  @Post('projects/:projectId/storyboards/scene')
+  @ApiOperation({ summary: '为单个场景生成分镜' })
+  async generateStoryboardsForScene(
+    @Param('projectId') projectId: string,
+    @Body() body: { scriptContent: string; sceneIndex: number; sceneName: string; sceneContent: string },
+  ) {
+    const storyboards = await this.workflowService.generateStoryboardsForScene(
+      projectId,
+      body.scriptContent,
+      body.sceneIndex,
+      body.sceneName,
+      body.sceneContent,
+    );
+    return storyboards;
+  }
+
   @Post('episodes/:episodeId/storyboards')
   @ApiOperation({ summary: '生成分镜' })
   async generateStoryboards(
@@ -160,5 +178,29 @@ export class WorkflowController {
   ) {
     const storyboard = await this.workflowService.updateStoryboard(id, body);
     return { id: storyboard.id };
+  }
+
+  @Post('projects/:projectId/script/format')
+  @ApiOperation({ summary: '转换剧本为标准格式' })
+  async formatScript(
+    @Param('projectId') projectId: string,
+    @Body() body: { content: string },
+  ) {
+    this.logger.log(`formatScript - projectId: ${projectId}, content: ${body.content}`);
+    const result = await this.workflowService.formatScript(body.content);
+    this.logger.log(`formatScript result: ${result}`);
+    return { content: result };
+  }
+
+  @Post('projects/:projectId/script/expand')
+  @ApiOperation({ summary: 'AI扩写剧本' })
+  async expandScript(
+    @Param('projectId') projectId: string,
+    @Body() body: { content: string; prompt: string },
+  ) {
+    this.logger.log(`expandScript - projectId: ${projectId}, prompt: ${body.prompt}, content: ${body.content}`);
+    const result = await this.workflowService.expandScript(body.content, body.prompt);
+    this.logger.log(`expandScript result: ${result}`);
+    return { content: result };
   }
 }

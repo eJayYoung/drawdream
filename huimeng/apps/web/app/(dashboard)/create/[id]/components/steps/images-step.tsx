@@ -1187,8 +1187,8 @@ export function ImagesStep() {
       <ErrorBanner error={error} />
 
       <div className="flex h-[calc(100vh-260px)] gap-4">
-        <div className="flex w-[410px] flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card">
-          <div className="border-b bg-muted/20 p-3">
+        <div className="flex w-[410px] flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+          <div className="neon-border-bottom neon-header p-3">
             <div className="text-sm font-medium">分镜列表</div>
             <div className="text-xs text-muted-foreground">
               左侧带入上一步分镜，共 {storyboards.length} 条
@@ -1267,8 +1267,8 @@ export function ImagesStep() {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
-          <div className="flex items-center justify-between border-b bg-muted/20 p-3">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+          <div className="flex items-center justify-between neon-border-bottom neon-header p-3">
             <div>
               <div className="text-sm font-medium">关键帧时间轴</div>
               <div className="text-xs text-muted-foreground">
@@ -1323,7 +1323,7 @@ export function ImagesStep() {
                     onClick={(event) => void handleTimelineClick(event)}
                     className="relative block h-24 w-full rounded-xl border border-dashed bg-muted/20 px-3 text-left"
                   >
-                    <div className="absolute left-3 right-3 top-1/2 h-[2px] -translate-y-1/2 bg-border" />
+                    <div className="absolute left-3 right-3 top-1/2 h-1 -translate-y-1/2 bg-primary/60 shadow-[0_0_8px_hsl(217.2_85%_35%_/_0.5)]" />
 
                     {Array.from({ length: secondTickCount + 1 }).map(
                       (_, index) => {
@@ -1342,8 +1342,8 @@ export function ImagesStep() {
                             className="absolute bottom-3 top-3"
                             style={{ left: `calc(${left}% - 1px)` }}
                           >
-                            <div className="h-full w-px bg-border/70" />
-                            <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground">
+                            <div className="h-full w-0.5 bg-primary/40" />
+                            <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/80">
                               {secondValue}s
                             </div>
                           </div>
@@ -1375,7 +1375,7 @@ export function ImagesStep() {
                               event.stopPropagation();
                               setSelectedPointId(point.id);
                             }}
-                            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 shadow-[0_0_6px_hsl(217.2_85%_35%_/_0.5)] ${
                               active
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-primary bg-background text-primary"
@@ -1394,7 +1394,7 @@ export function ImagesStep() {
                     <div className="mb-3 text-sm font-medium">关键帧信息</div>
                     {selectedPoint ? (
                       <div className="space-y-3 text-sm">
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className="rounded-lg bg-muted/50 p-3">
                           <div className="font-medium">
                             {selectedPoint.label}
                           </div>
@@ -1566,7 +1566,7 @@ export function ImagesStep() {
 
       {aiKeyframeOpen && selectedStoryboard ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
+          <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-background shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b px-5 py-4">
               <div>
                 <div className="text-base font-semibold">AI生成关键帧</div>
@@ -1745,7 +1745,7 @@ export function ImagesStep() {
 
       {generatorOpen && selectedStoryboard && selectedPoint ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
+          <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b px-5 py-4">
               <div>
                 <div className="text-base font-semibold">生成关键帧图片</div>

@@ -10,6 +10,7 @@ import { GenerationModule } from './generation/generation.module';
 import { MediaModule } from './media/media.module';
 import { CommonModule } from './common/common.module';
 import { Project, Episode, Character } from './entities';
+import { LoggingInterceptor } from './common/logging.interceptor';
 
 @Module({
   imports: [
@@ -40,5 +41,6 @@ import { Project, Episode, Character } from './entities';
     GenerationModule,
     MediaModule,
   ],
+  providers: [LoggingInterceptor],
 })
 export class AppModule {}

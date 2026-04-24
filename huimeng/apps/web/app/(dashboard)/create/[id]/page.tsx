@@ -132,9 +132,9 @@ export default function ProjectCreatePage({
   }
 
   return (
-    <div className="flex h-full">
-      <div className="w-56 flex-shrink-0 overflow-y-auto border-r bg-card">
-        <div className="border-b p-3">
+    <div className="flex h-screen min-h-0">
+      <div className="w-56 flex-shrink-0 overflow-y-auto border-r bg-card shadow-[2px_0_16px_hsl(217.2_60%_45%_/_0.15),_0_0_8px_hsl(0_0%_0%_/_0.4)]">
+        <div className="border-b neon-border-bottom neon-header p-3">
           <button
             onClick={() => router.push("/projects")}
             className="mb-2 rounded-lg p-1.5 hover:bg-accent"
@@ -195,37 +195,9 @@ export default function ProjectCreatePage({
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {currentStepData.id !== "storyboard" ? (
-          <div className="flex items-center justify-between border-b p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                <StepIcon size={24} className="text-primary" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold">
-                  {currentStepData.title}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {currentStepData.description}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => void saveAll()}
-              className="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-muted"
-            >
-              <Save size={16} />
-              保存全部
-            </button>
-          </div>
-        ) : null}
-
-        <div className="flex-1 overflow-auto p-6">
+      <div className="flex flex-col flex-1 overflow-hidden p-6 min-h-0">
           {renderStep(currentStepData.id)}
         </div>
-      </div>
     </div>
   );
 }

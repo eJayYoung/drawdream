@@ -2,12 +2,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { LoggingInterceptor } from './common/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Global prefix
   app.setGlobalPrefix('api');
+
+  // Global logging interceptor
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   // CORS
   app.enableCors({

@@ -277,8 +277,8 @@ export function VideoStep() {
 
       <ErrorBanner error={error} />
 
-      <div className="rounded-xl border bg-card">
-        <div className="flex items-center justify-between border-b bg-muted/20 px-4 py-3">
+      <div className="rounded-xl border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+        <div className="flex items-center justify-between neon-border-bottom neon-header px-4 py-3">
           <div>
             <div className="text-sm font-medium">分镜视频素材轨道</div>
             <div className="text-xs text-muted-foreground">

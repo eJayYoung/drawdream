@@ -28,6 +28,8 @@ type StoryboardItem = {
   sceneNumber: number;
   sceneId: string;
   sceneLabel: string;
+  scriptId: string;
+  scriptTitle: string;
   beat: string;
   narrativePurpose: string;
   dramaticConflict: string;
@@ -140,6 +142,165 @@ const getScriptContent = (script: any) => {
     : JSON.stringify(script.content);
 };
 
+const parseScriptToScenes = (scriptContent: string): { name: string; content: string }[] => {
+  if (!scriptContent) return [];
+
+  const scenes: { name: string; content: string }[] = [];
+
+  // 尝试解析为JSON（如果剧本已经结构化）
+  try {
+    const parsed = JSON.parse(scriptContent);
+    if (Array.isArray(parsed.scenes)) {
+      return parsed.scenes.map((scene: any, index: number) => ({
+        name: scene.name || scene.location || `场景 ${index + 1}`,
+        content: scene.description || scene.content || JSON.stringify(scene),
+      }));
+    }
+    if (Array.isArray(parsed.episodes)) {
+      const allScenes: { name: string; content: string }[] = [];
+      parsed.episodes.forEach((episode: any, epIndex: number) => {
+        if (Array.isArray(episode.scenes)) {
+          episode.scenes.forEach((scene: any, sceneIndex: number) => {
+            allScenes.push({
+              name: scene.name || scene.location || `场景 ${sceneIndex + 1}`,
+              content: scene.description || scene.content || JSON.stringify(scene),
+            });
+          });
+        }
+      });
+      if (allScenes.length > 0) return allScenes;
+    }
+  } catch {
+    // 不是JSON格式，按文本处理
+  }
+
+  // 按场景标记分割（支持多种格式）
+  // 格式1: 【场景1】内景 咖啡厅-白天
+  // 格式2: 场景1：或 Scene 1:
+  // 格式3: 以 "场景" 开头的新段落
+  const scenePatterns = [
+    /【场景(\d+)】?\s*(.*?)(?=(?:【场景|$))/gi,
+    /场景\s*(\d+)[:：]\s*(.*?)(?=(?:场景\s*\d+[:：]|$))/gi,
+    /(第?\s*(\d+)\s*[集场场景][\s:：])(.*?)(?=(?:第?\s*(\d+)\s*[集场场景][\s:：]|$))/gi,
+  ];
+
+  let sceneTexts: string[] = [];
+  let matched = false;
+
+  // 尝试按场景标记分割
+  for (const pattern of scenePatterns) {
+    const matches = [...scriptContent.matchAll(pattern)];
+    if (matches.length > 0) {
+      matched = true;
+      let lastIndex = 0;
+      matches.forEach((match) => {
+        const sceneName = match[1] ? `场景 ${match[1]}` : `场景 ${sceneTexts.length + 1}`;
+        const startIndex = match.index || 0;
+        if (startIndex > lastIndex) {
+          sceneTexts.push(scriptContent.slice(lastIndex, startIndex));
+        }
+        sceneTexts.push(match[0]);
+        lastIndex = startIndex + match[0].length;
+      });
+      if (lastIndex < scriptContent.length) {
+        sceneTexts.push(scriptContent.slice(lastIndex));
+      }
+      break;
+    }
+  }
+
+  // 如果没有匹配到场景标记，按段落分割
+  if (!matched) {
+    const paragraphs = scriptContent.split(/\n\n+/);
+    let currentScene = "";
+    let sceneCount = 0;
+
+    for (const paragraph of paragraphs) {
+      const trimmed = paragraph.trim();
+      if (!trimmed) continue;
+
+      // 检查是否是场景标题
+      if (/^(场景|第|\d+[.、])/.test(trimmed) || /【/.test(trimmed)) {
+        if (currentScene) {
+          sceneCount++;
+          scenes.push({
+            name: `场景 ${sceneCount}`,
+            content: currentScene.trim(),
+          });
+          currentScene = "";
+        }
+        // 提取场景名称
+        const nameMatch = trimmed.match(/^(【?场景[^\]】]*】?)/);
+        const sceneName = nameMatch ? nameMatch[1].replace(/【|】/g, "") : `场景 ${sceneCount + 1}`;
+        currentScene = trimmed;
+        sceneCount++;
+        scenes.push({
+          name: sceneName,
+          content: "",
+        });
+        currentScene = "";
+      } else {
+        if (scenes.length > 0) {
+          scenes[scenes.length - 1].content += (scenes[scenes.length - 1].content ? "\n" : "") + trimmed;
+        } else {
+          currentScene += (currentScene ? "\n" : "") + trimmed;
+        }
+      }
+    }
+
+    if (currentScene.trim()) {
+      sceneCount++;
+      scenes.push({
+        name: `场景 ${sceneCount}`,
+        content: currentScene.trim(),
+      });
+    }
+  } else {
+    // 处理按场景标记分割的结果
+    let currentContent = "";
+    for (const text of sceneTexts) {
+      const trimmed = text.trim();
+      if (!trimmed) continue;
+
+      const sceneMatch = trimmed.match(/^(?:【)?场景(\d+)[】]?\s*(.*)/);
+      if (sceneMatch) {
+        if (currentContent) {
+          scenes.push({
+            name: `场景 ${scenes.length + 1}`,
+            content: currentContent.trim(),
+          });
+        }
+        currentContent = sceneMatch[2] || "";
+      } else {
+        currentContent += (currentContent ? "\n" : "") + trimmed;
+      }
+    }
+    if (currentContent.trim()) {
+      scenes.push({
+        name: `场景 ${scenes.length + 1}`,
+        content: currentContent.trim(),
+      });
+    }
+  }
+
+  // 如果还是没有找到场景，按段落数量均分
+  if (scenes.length === 0) {
+    const paragraphs = scriptContent.split(/\n\n+/).filter((p) => p.trim());
+    const chunkSize = Math.ceil(paragraphs.length / 3);
+    for (let i = 0; i < paragraphs.length; i += chunkSize) {
+      const chunk = paragraphs.slice(i, i + chunkSize).join("\n\n");
+      if (chunk.trim()) {
+        scenes.push({
+          name: `场景 ${Math.floor(i / chunkSize) + 1}`,
+          content: chunk.trim(),
+        });
+      }
+    }
+  }
+
+  return scenes.filter((s) => s.content.trim());
+};
+
 const inferShotType = (value: string) => {
   const text = value.toLowerCase();
   if (text.includes("极特写") || text.includes("extreme close")) {
@@ -231,6 +392,8 @@ const normalizeStoryboard = (
       sanitizeText(
         raw?.sceneLabel || matchedScene?.name || matchedScene?.location,
       ) || `场景 ${sceneNumber}`,
+    scriptId: raw?.scriptId || "",
+    scriptTitle: raw?.scriptTitle || "",
     beat: sanitizeText(
       raw?.beat ||
         matchedScene?.name ||
@@ -554,6 +717,7 @@ export function StoryboardStep() {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>(
     [],
   );
+  const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [generatingImageForId, setGeneratingImageForId] = useState<
@@ -873,47 +1037,90 @@ export function StoryboardStep() {
     setGeneratingFromScript(true);
     updateStepStatus("storyboard", "generating");
     clearError();
+    setGeneratedCandidates([]);
+    setSelectedCandidateIds([]);
+    setPreviewOpen(true);
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/workflow/projects/${projectId}/storyboards`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ scriptContent }),
-        },
-      );
+      // 解析剧本内容，按场景分割
+      const scenes = parseScriptToScenes(scriptContent);
 
-      if (!response.ok) {
-        throw new Error("分镜生成失败，请稍后重试。");
+      if (scenes.length === 0) {
+        throw new Error("无法从剧本中提取场景，请确保剧本格式正确。");
       }
 
-      const generated = await response.json();
-      const candidates = (Array.isArray(generated) ? generated : []).map(
-        (item, index) =>
-          normalizeStoryboard(
+      setGenerationProgress({ current: 0, total: scenes.length });
+
+      // 并发生成分镜（保持顺序）
+      const fetchSceneStoryboards = async (scene: { name: string; content: string }, i: number) => {
+        try {
+          const response = await fetch(
+            `${API_URL}/api/workflow/projects/${projectId}/storyboards/scene`,
             {
-              ...item,
-              id: `candidate-${Date.now()}-${index}`,
-              source: "ai",
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                scriptContent,
+                sceneIndex: i,
+                sceneName: scene.name,
+                sceneContent: scene.content,
+              }),
             },
-            index,
-            scenesResult,
-            charactersResult,
-          ),
+          );
+
+          if (!response.ok) {
+            throw new Error(`场景 ${i + 1} 生成分镜失败`);
+          }
+
+          const generated = await response.json();
+          // 找到匹配的场景
+          const matchedScene = scenesResult.find(s => s.name === scene.name) || scenesResult[i] || scenesResult[0];
+          const candidates = (Array.isArray(generated) ? generated : []).map(
+            (item: any, index: number) =>
+              normalizeStoryboard(
+                {
+                  ...item,
+                  id: `candidate-${Date.now()}-${i}-${index}`,
+                  source: "ai",
+                  scriptId: script.id || "",
+                  scriptTitle: sanitizeText(script.title) || `剧本 ${selectedScriptForGeneration + 1}`,
+                  sceneId: matchedScene?.id || "",
+                  sceneLabel: matchedScene?.name || matchedScene?.location || scene.name,
+                },
+                i * 100 + index,
+                scenesResult,
+                charactersResult,
+              ),
+          );
+
+          return { index: i, candidates };
+        } catch (sceneError: any) {
+          console.error(`Scene ${i + 1} generation failed:`, sceneError);
+          return { index: i, candidates: [], error: sceneError.message };
+        }
+      };
+
+      // 并发所有请求
+      const results = await Promise.all(
+        scenes.map((scene, i) => fetchSceneStoryboards(scene, i)),
       );
 
-      if (candidates.length === 0) {
-        throw new Error("AI 没有返回可用分镜，请检查剧本内容是否完整。");
+      // 按场景顺序更新UI（结果已按索引排序）
+      const allCandidates: StoryboardItem[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        allCandidates.push(...result.candidates);
+        // 逐步更新，让用户看到进度
+        setGeneratedCandidates([...allCandidates]);
+        setSelectedCandidateIds(allCandidates.map((item: StoryboardItem) => item.id));
+        setGenerationProgress({ current: i + 1, total: scenes.length });
+        // 短暂延迟让UI可以渲染
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      setGeneratedCandidates(candidates);
-      setSelectedCandidateIds(candidates.map((item) => item.id));
-      setPreviewOpen(true);
-      setScriptPickerOpen(false);
       updateStepStatus(
         "storyboard",
         storyboards.length > 0 ? "completed" : "pending",
@@ -958,6 +1165,9 @@ export function StoryboardStep() {
             generationTaskId: "",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            // 保留脚本绑定信息
+            scriptId: item.scriptId,
+            scriptTitle: item.scriptTitle,
           },
           insertIndex + index,
           scenesResult,
@@ -1181,30 +1391,38 @@ export function StoryboardStep() {
             : "还没有分镜";
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-sm">
-        <div className="text-muted-foreground">
-          左侧只显示真实分镜列表，右侧编辑改为手动保存。
-        </div>
-        <div className="text-muted-foreground">{saveStatusText}</div>
-      </div>
+    <div className="flex flex-col flex-1 min-h-0">
 
       <ErrorBanner error={error} />
 
-      <div className="flex h-[calc(100vh-220px)] gap-3">
-        <div className="flex w-[460px] flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card">
-          <div className="flex items-center justify-between border-b bg-muted/20 p-3">
-            <div>
-              <div className="text-sm font-medium">分镜列表</div>
-              <div className="text-xs text-muted-foreground">
-                共 {storyboards.length} 条镜头，选中后可用上下方向键调整顺序
-              </div>
-            </div>
+      {scripts.length > 0 && (
+        <div className="flex items-center gap-2 mb-3 px-1 overflow-x-auto">
+          {scripts.map((script: any, index: number) => (
+            <button
+              key={script.id || index}
+              type="button"
+              onClick={() => setSelectedScriptForGeneration(index)}
+              className={`shrink-0 rounded-lg border px-4 py-1.5 text-sm transition-colors ${
+                selectedScriptForGeneration === index
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'hover:bg-muted'
+              }`}
+            >
+              {sanitizeText(script.title) || `剧本 ${index + 1}`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-1 gap-3 min-h-0">
+        <div className="flex w-[460px] flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+          <div className="flex items-center justify-between neon-border-bottom neon-header p-3">
+            <div className="text-sm font-medium">分镜列表</div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={openScriptPicker}
-                disabled={generatingFromScript}
+                onClick={() => void generateStoryboardsFromScript()}
+                disabled={generatingFromScript || scripts.length === 0}
                 className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
               >
                 {generatingFromScript ? (
@@ -1215,7 +1433,7 @@ export function StoryboardStep() {
                 ) : (
                   <>
                     <Sparkles size={14} />
-                    从剧本生成
+                    AI生成
                   </>
                 )}
               </button>
@@ -1361,10 +1579,10 @@ export function StoryboardStep() {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)] min-h-0">
           {activeStoryboard ? (
             <>
-              <div className="flex items-center justify-between border-b bg-muted/20 p-3">
+              <div className="flex items-center justify-between neon-border-bottom neon-header p-3">
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-primary">
                     分场 {activeStoryboard.sceneNumber} · 镜头{" "}
@@ -1870,7 +2088,7 @@ export function StoryboardStep() {
 
       {scriptPickerOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="flex w-full max-w-2xl flex-col rounded-xl bg-card shadow-xl">
+          <div className="flex w-full max-w-2xl flex-col rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b p-4">
               <div>
                 <h3 className="text-lg font-medium">选择剧本</h3>
@@ -1949,10 +2167,22 @@ export function StoryboardStep() {
 
       {previewOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-xl bg-card shadow-xl">
+          <div className="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b p-4">
               <div>
-                <h3 className="text-lg font-medium">分镜预览</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-medium">分镜预览</h3>
+                  {generatingFromScript && (
+                    <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                      生成中 {generationProgress.current}/{generationProgress.total}
+                    </span>
+                  )}
+                  {!generatingFromScript && (
+                    <span className="rounded bg-green-500/10 px-2 py-0.5 text-xs text-green-500">
+                      已完成
+                    </span>
+                  )}
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   勾选要保留的分镜，再插入当前列表。
                 </p>

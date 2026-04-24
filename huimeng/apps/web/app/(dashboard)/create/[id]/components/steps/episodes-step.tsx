@@ -49,7 +49,7 @@ export function EpisodesStep() {
           </div>
         </div>
       ) : episodesResult.length > 0 ? (
-        <div className="flex-1 overflow-auto rounded-lg border bg-muted/30 p-4">
+        <div className="flex-1 overflow-auto rounded-lg border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)] p-4">
           <div className="space-y-4">
             {episodesResult.map((episode: any, index: number) => (
               <div key={episode.id || index} className="rounded-lg border bg-card p-4">

@@ -196,6 +196,54 @@ export class WorkflowService {
     }
   }
 
+  async generateStoryboardsForScene(
+    projectId: string,
+    scriptContent: string,
+    sceneIndex: number,
+    sceneName: string,
+    sceneContent: string,
+  ): Promise<any[]> {
+    try {
+      this.logger.log(`Generating storyboards for scene ${sceneIndex + 1} in project ${projectId}`);
+
+      const result = await this.llmService.generateStoryboardsForScene(
+        scriptContent,
+        sceneIndex,
+        sceneName,
+        sceneContent,
+      );
+
+      const storyboards = (result.storyboards || []).map((sb: any, index: number) => ({
+        id: uuidv4(),
+        projectId,
+        sceneNumber: sceneIndex + 1,
+        title: sb.title || `镜头 ${index + 1}`,
+        shotType: sb.shotType || '中景',
+        cameraAngle: sb.cameraAngle || '平视',
+        cameraMovement: sb.cameraMovement || '固定',
+        durationSeconds: sb.durationSeconds || 4,
+        emotionTone: sb.emotionTone || '',
+        beat: sb.beat || '',
+        narrativePurpose: sb.narrativePurpose || '',
+        dramaticConflict: sb.dramaticConflict || '',
+        action: sb.action || '',
+        dialogue: sb.dialogue || '',
+        narration: sb.narration || '',
+        charactersInShot: sb.charactersInShot || [],
+        imagePrompt: sb.imagePrompt || '',
+        source: 'ai',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      this.logger.log(`Generated ${storyboards.length} storyboards for scene ${sceneIndex + 1}`);
+      return storyboards;
+    } catch (error: any) {
+      this.logger.error(`Failed to generate storyboards for scene: ${error.message}`);
+      throw error;
+    }
+  }
+
   async generateStoryboards(
     episodeId: string,
     options?: { autoGenerateImages?: boolean; style?: string },
@@ -280,6 +328,30 @@ export class WorkflowService {
     if (!storyboard) throw new Error('Storyboard not found');
     Object.assign(storyboard, data, { updatedAt: new Date() });
     return storyboard;
+  }
+
+  async formatScript(content: string): Promise<string> {
+    try {
+      this.logger.log(`Formatting script to standard format`);
+      const formattedContent = await this.llmService.formatScript(content);
+      this.logger.log(`Script formatted successfully`);
+      return formattedContent;
+    } catch (error: any) {
+      this.logger.error(`Failed to format script: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async expandScript(content: string, userPrompt: string): Promise<string> {
+    try {
+      this.logger.log(`Expanding script with prompt: ${userPrompt}`);
+      const expandedContent = await this.llmService.expandScript(content, userPrompt);
+      this.logger.log(`Script expanded successfully`);
+      return expandedContent;
+    } catch (error: any) {
+      this.logger.error(`Failed to expand script: ${error.message}`);
+      throw error;
+    }
   }
 
   async getEpisode(episodeId: string): Promise<any> {

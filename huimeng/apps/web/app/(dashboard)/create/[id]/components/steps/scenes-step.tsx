@@ -9,24 +9,17 @@ import {
   Plus,
   Sparkles,
   Trash2,
-  Upload,
   X,
   ZoomIn,
+  Panorama,
 } from 'lucide-react';
 import { AssetGeneratorModal } from '../asset-generator-modal';
 import { ErrorBanner } from '../error-banner';
+import { PanoramaViewer } from '../panorama-viewer';
 import { useCreateWorkflowStore } from '../../workflow-store';
 import { useSocketIO, type GenerationProgressPayload } from '../../../../../../lib/use-socket-io';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-const createEmptySceneForm = () => ({
-  name: '',
-  location: '',
-  timeOfDay: '白天',
-  description: '',
-  imageUrl: '',
-});
 
 const createEmptyAssetForm = () => ({
   type: 'image' as 'image' | 'video',
@@ -61,10 +54,15 @@ export function ScenesStep() {
     saveScenesToBackend: state.saveScenesToBackend,
   }));
 
-  const [selectedSceneIndex, setSelectedSceneIndex] = useState<number | null>(null);
-  const [showSceneForm, setShowSceneForm] = useState(false);
-  const [editingSceneIndex, setEditingSceneIndex] = useState<number | null>(null);
-  const [sceneForm, setSceneForm] = useState(createEmptySceneForm());
+  const [selectedSceneIndexInternal, setSelectedSceneIndexInternal] = useState<number | null>(null);
+  const [sceneForm, setSceneForm] = useState({
+    name: '',
+    location: '',
+    timeOfDay: '白天',
+    weather: '晴朗',
+    description: '',
+    elements: '',
+  });
 
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetForm, setAssetForm] = useState(createEmptyAssetForm());
@@ -79,11 +77,10 @@ export function ScenesStep() {
   const [selectedSceneIndices, setSelectedSceneIndices] = useState<number[]>([]);
   const [showScenePreview, setShowScenePreview] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [panoramaImage, setPanoramaImage] = useState<string | null>(null);
 
-  // Pending asset taskId → { sceneIndex, assetIndex } mapping
   const pendingScenesRef = useRef<Map<string, { sceneIndex: number; assetIndex: number }>>(new Map());
 
-  // --- WebSocket for real-time asset updates ---
   const [userId, setUserId] = useState('');
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -131,11 +128,8 @@ export function ScenesStep() {
 
   const step = steps.find((item) => item.id === 'scenes');
 
-  useEffect(() => {
-    if (selectedSceneIndex !== null && selectedSceneIndex >= scenesResult.length) {
-      setSelectedSceneIndex(scenesResult.length > 0 ? 0 : null);
-    }
-  }, [scenesResult.length, selectedSceneIndex]);
+  const activeIndex = selectedSceneIndexInternal !== null ? selectedSceneIndexInternal : null;
+  const activeScene = activeIndex !== null ? scenesResult[activeIndex] : null;
 
   const persistScenes = async (nextScenes: any[]) => {
     setScenesResult(nextScenes);
@@ -148,45 +142,114 @@ export function ScenesStep() {
     setSelectedSceneIndices([]);
   };
 
-  const openCreateForm = () => {
-    setEditingSceneIndex(null);
-    setSceneForm(createEmptySceneForm());
-    setShowSceneForm(true);
-  };
-
-  const openEditForm = (index: number) => {
+  const handleSelectScene = (index: number) => {
+    setSelectedSceneIndexInternal(index);
     const scene = scenesResult[index];
-    if (!scene) return;
-    setEditingSceneIndex(index);
-    setSceneForm({
-      name: scene.name || '',
-      location: scene.location || '',
-      timeOfDay: scene.timeOfDay || '白天',
-      description: scene.description || '',
-      imageUrl: scene.imageUrl || '',
-    });
-    setShowSceneForm(true);
+    if (scene) {
+      setSceneForm({
+        name: scene.name || '',
+        location: scene.location || '',
+        timeOfDay: scene.timeOfDay || '白天',
+        weather: scene.weather || '晴朗',
+        description: scene.description || '',
+        elements: Array.isArray(scene.elements) ? scene.elements.join('、') : scene.elements || '',
+      });
+    }
   };
 
-  const selectedScene =
-    selectedSceneIndex !== null ? scenesResult[selectedSceneIndex] : null;
+  const handleSaveScene = async () => {
+    if (activeIndex === null) return;
+    const nextScenes = [...scenesResult];
+    const scene = nextScenes[activeIndex];
+    const elementsArray = sceneForm.elements
+      ? sceneForm.elements.split('、').map((s) => s.trim()).filter(Boolean)
+      : [];
+    nextScenes[activeIndex] = {
+      ...scene,
+      name: sceneForm.name || sceneForm.location || scene.name || `场景 ${activeIndex + 1}`,
+      location: sceneForm.location,
+      timeOfDay: sceneForm.timeOfDay,
+      weather: sceneForm.weather,
+      description: sceneForm.description,
+      elements: elementsArray,
+    };
+    await persistScenes(nextScenes);
+  };
+
+  const handleDeleteScene = async (index: number) => {
+    if (!confirm('确定删除这个场景吗？')) return;
+
+    const nextScenes = scenesResult.filter((_, i) => i !== index);
+    let nextSelectedIndex = selectedSceneIndexInternal;
+
+    if (selectedSceneIndexInternal === index) {
+      nextSelectedIndex = null;
+    } else if (selectedSceneIndexInternal !== null && selectedSceneIndexInternal > index) {
+      nextSelectedIndex = selectedSceneIndexInternal - 1;
+    }
+
+    setScenesResult(nextScenes);
+    setSelectedSceneIndexInternal(nextSelectedIndex);
+    if (nextSelectedIndex !== null) {
+      setSceneForm({
+        name: nextScenes[nextSelectedIndex]?.name || '',
+        location: nextScenes[nextSelectedIndex]?.location || '',
+        timeOfDay: nextScenes[nextSelectedIndex]?.timeOfDay || '白天',
+        weather: nextScenes[nextSelectedIndex]?.weather || '晴朗',
+        description: nextScenes[nextSelectedIndex]?.description || '',
+        elements: Array.isArray(nextScenes[nextSelectedIndex]?.elements)
+          ? nextScenes[nextSelectedIndex].elements.join('、')
+          : nextScenes[nextSelectedIndex]?.elements || '',
+      });
+    } else {
+      setSceneForm({
+        name: '',
+        location: '',
+        timeOfDay: '白天',
+        weather: '晴朗',
+        description: '',
+        elements: '',
+      });
+    }
+
+    await saveScenesToBackend(nextScenes);
+  };
+
+  const handleAddScene = async () => {
+    const newScene = {
+      id: `scene-${Date.now()}`,
+      name: '',
+      location: '',
+      timeOfDay: '白天',
+      weather: '晴朗',
+      description: '',
+      elements: [] as string[],
+      assets: [] as any[],
+      createdAt: new Date().toISOString(),
+    };
+    const nextScenes = [...scenesResult, newScene];
+    setScenesResult(nextScenes);
+    setSelectedSceneIndexInternal(scenesResult.length);
+    setSceneForm({
+      name: '',
+      location: '',
+      timeOfDay: '白天',
+      weather: '晴朗',
+      description: '',
+      elements: '',
+    });
+    await saveScenesToBackend(nextScenes);
+  };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col flex-1 min-h-0">
       <ErrorBanner error={error} />
 
-      {step?.status === 'generating' && (
-        <div className="flex items-center justify-center py-4 text-muted-foreground">
-          <div className="flex items-center gap-3">
-            <Loader2 size={20} className="animate-spin text-primary" />
-            <span>正在生成场景...</span>
-          </div>
-        </div>
-      )}
 
-      <div className="flex h-[calc(100vh-280px)] gap-4">
-        <div className="flex w-2/5 flex-col overflow-hidden rounded-lg border">
-          <div className="flex items-center justify-between border-b bg-muted/30 p-3">
+      <div className="flex flex-1 gap-4 overflow-hidden">
+        {/* Left: Scene List */}
+        <div className="flex w-[356px] flex-col overflow-hidden rounded-lg border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+          <div className="flex items-center justify-between neon-border-bottom neon-header p-3 shrink-0">
             <span className="text-sm font-medium">场景列表 ({scenesResult.length})</span>
             <div className="flex items-center gap-2">
               <button
@@ -201,137 +264,202 @@ export function ScenesStep() {
                 AI 生成
               </button>
               <button
-                onClick={openCreateForm}
+                onClick={handleAddScene}
                 className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
               >
                 <Plus size={14} />
-                新建场景
+                新建
               </button>
             </div>
           </div>
 
           <div className="flex-1 space-y-2 overflow-auto p-3">
-            {scenesResult.length > 0 ? (
-              scenesResult.map((scene, index) => (
-                <button
-                  key={scene.id || index}
-                  onClick={() => setSelectedSceneIndex(index)}
-                  className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                    selectedSceneIndex === index
-                      ? 'border-primary bg-primary/5'
-                      : 'hover:bg-muted/40'
-                  }`}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium">
-                        {scene.name || scene.location || `场景 ${index + 1}`}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {scene.location || '-'} · {scene.timeOfDay || '白天'}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openEditForm(index);
-                        }}
-                        className="rounded p-1 hover:bg-muted"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        onClick={async (event) => {
-                          event.stopPropagation();
-                          if (!confirm('确定删除这个场景吗？')) return;
-                          const nextScenes = scenesResult.filter(
-                            (_, itemIndex) => itemIndex !== index,
-                          );
-                          await persistScenes(nextScenes);
-                        }}
-                        className="rounded p-1 hover:bg-muted hover:text-destructive"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="line-clamp-2 text-xs text-muted-foreground">
-                    {scene.description || '暂无场景描述'}
-                  </div>
-                </button>
-              ))
-            ) : (
+            {scenesResult.length === 0 ? (
               <div className="flex h-full items-center justify-center text-muted-foreground">
                 <div className="text-center">
                   <MapPin size={32} className="mx-auto mb-2 opacity-50" />
                   <p className="text-sm">暂无场景</p>
                 </div>
               </div>
+            ) : (
+              scenesResult.map((scene, index) => (
+                <div
+                  key={scene.id || index}
+                  onClick={() => handleSelectScene(index)}
+                  className={`cursor-pointer rounded-lg border p-3 transition-all ${
+                    activeIndex === index
+                      ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                      : 'hover:border-primary/40'
+                  }`}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {activeIndex === index && (
+                        <MapPin size={14} className="text-primary" />
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteScene(index);
+                      }}
+                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  <h3 className="truncate text-sm font-medium">
+                    {scene.name || scene.location || `场景 ${index + 1}`}
+                  </h3>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                    {scene.description ? `${scene.description.slice(0, 60)}...` : '空场景'}
+                  </p>
+                </div>
+              ))
             )}
           </div>
         </div>
 
-        <div className="flex w-3/5 flex-col overflow-hidden rounded-lg border">
-          {selectedScene ? (
-            <>
-              <div className="flex items-center justify-between border-b bg-muted/30 p-3">
-                <div>
-                  <div className="font-medium">
-                    {selectedScene.name || selectedScene.location || '未命名场景'}
+        {/* Right: Detail Edit + Assets */}
+        <div className="flex flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+          {activeScene ? (
+            <div className="flex h-full">
+              {/* Left: Detail Edit */}
+              <div className="flex w-[420px] flex-col border-r overflow-hidden shrink-0">
+                <div className="flex items-center justify-between neon-border-bottom neon-header p-3 shrink-0">
+                  <div>
+                    <div className="font-medium">
+                      {activeScene.name || activeScene.location || '未命名场景'}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {activeScene.location || '-'} · {activeScene.timeOfDay || '白天'}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {selectedScene.location || '-'} · {selectedScene.timeOfDay || '白天'}
+                  <button
+                    onClick={handleSaveScene}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+                  >
+                    保存
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-auto p-4">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">场景名称</label>
+                      <input
+                        type="text"
+                        value={sceneForm.name}
+                        onChange={(e) => setSceneForm((current) => ({ ...current, name: e.target.value }))}
+                        placeholder="场景名称"
+                        className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">地点</label>
+                        <input
+                          type="text"
+                          value={sceneForm.location}
+                          onChange={(e) => setSceneForm((current) => ({ ...current, location: e.target.value }))}
+                          placeholder="室内/室外"
+                          className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">时间</label>
+                        <select
+                          value={sceneForm.timeOfDay}
+                          onChange={(e) => setSceneForm((current) => ({ ...current, timeOfDay: e.target.value }))}
+                          className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="清晨">清晨</option>
+                          <option value="白天">白天</option>
+                          <option value="黄昏">黄昏</option>
+                          <option value="傍晚">傍晚</option>
+                          <option value="夜晚">夜晚</option>
+                          <option value="深夜">深夜</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">天气</label>
+                        <select
+                          value={sceneForm.weather}
+                          onChange={(e) => setSceneForm((current) => ({ ...current, weather: e.target.value }))}
+                          className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="晴朗">晴朗</option>
+                          <option value="阴天">阴天</option>
+                          <option value="雨天">雨天</option>
+                          <option value="雪天">雪天</option>
+                          <option value="雾天">雾天</option>
+                          <option value="大风">大风</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">环境描述</label>
+                      <textarea
+                        value={sceneForm.description}
+                        onChange={(e) => setSceneForm((current) => ({ ...current, description: e.target.value }))}
+                        placeholder="场景环境、氛围描述..."
+                        className="min-h-[100px] w-full resize-none rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">场景元素</label>
+                      <input
+                        type="text"
+                        value={sceneForm.elements}
+                        onChange={(e) => setSceneForm((current) => ({ ...current, elements: e.target.value }))}
+                        placeholder="关键道具、装饰物（用、分隔）"
+                        className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    {activeScene.imageUrl && (
+                      <div className="relative">
+                        <img
+                          src={activeScene.imageUrl}
+                          alt="scene"
+                          className="h-40 w-full rounded-lg object-cover"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
-                <button
-                  onClick={() => openEditForm(selectedSceneIndex!)}
-                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-muted"
-                >
-                  编辑场景
-                </button>
               </div>
 
-              <div className="flex-1 space-y-4 overflow-auto p-4">
-                {selectedScene.imageUrl && (
-                  <img
-                    src={selectedScene.imageUrl}
-                    alt={selectedScene.name || 'scene'}
-                    className="h-48 w-full rounded-lg object-cover"
-                  />
-                )}
-
-                <div className="text-sm">
-                  <span className="text-muted-foreground">环境描述：</span>
-                  <p className="mt-1 text-muted-foreground">
-                    {selectedScene.description || '-'}
-                  </p>
+              {/* Right: Asset Management */}
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="flex items-center justify-between neon-border-bottom neon-header p-3 shrink-0">
+                  <span className="text-sm font-medium">场景资产</span>
+                  <button
+                    onClick={() => {
+                      setAssetForm({
+                        ...createEmptyAssetForm(),
+                        prompt: `${activeScene.location || ''} ${activeScene.timeOfDay || ''} ${activeScene.weather || ''} ${activeScene.description || ''}`.trim(),
+                      });
+                      setReferenceImage(activeScene.imageUrl || null);
+                      setShowAssetForm(true);
+                    }}
+                    className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+                  >
+                    <Plus size={14} />
+                    新建资产
+                  </button>
                 </div>
 
-                <div className="border-t pt-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="text-sm font-medium">场景资产</span>
-                    <button
-                      onClick={() => {
-                        setAssetForm({
-                          ...createEmptyAssetForm(),
-                          prompt: `${selectedScene.location || ''} ${
-                            selectedScene.timeOfDay || ''
-                          } ${selectedScene.description || ''}`.trim(),
-                        });
-                        setReferenceImage(selectedScene.imageUrl || null);
-                        setShowAssetForm(true);
-                      }}
-                      className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-                    >
-                      <Plus size={14} />
-                      新建资产
-                    </button>
-                  </div>
-
-                  {(selectedScene.assets || []).length > 0 ? (
+                <div className="flex-1 overflow-auto p-3">
+                  {(activeScene.assets || []).length > 0 ? (
                     <div className="grid grid-cols-2 gap-3">
-                      {(selectedScene.assets || []).map((asset: any, index: number) => (
+                      {(activeScene.assets || []).map((asset: any, index: number) => (
                         <div key={asset.id || index} className="overflow-hidden rounded-lg border">
                           <div className="relative aspect-square bg-muted">
                             {asset.type === 'image' ? (
@@ -345,7 +473,16 @@ export function ScenesStep() {
                                     alt={asset.prompt}
                                     className="h-full w-full object-cover"
                                   />
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
+                                  <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 transition-colors group-hover:bg-black/30">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPanoramaImage(asset.url);
+                                      }}
+                                      className="rounded-lg bg-black/50 p-2 text-white hover:bg-black/70"
+                                    >
+                                      <Panorama size={18} />
+                                    </button>
                                     <ZoomIn
                                       size={24}
                                       className="text-white opacity-0 transition-opacity group-hover:opacity-100"
@@ -366,12 +503,12 @@ export function ScenesStep() {
                             <button
                               onClick={async () => {
                                 const nextScenes = [...scenesResult];
-                                nextScenes[selectedSceneIndex!].assets = (
-                                  nextScenes[selectedSceneIndex!].assets || []
+                                nextScenes[activeIndex!].assets = (
+                                  nextScenes[activeIndex!].assets || []
                                 ).filter((_: any, assetIndex: number) => assetIndex !== index);
                                 await persistScenes(nextScenes);
                               }}
-                              className="absolute right-2 top-2 rounded bg-black/50 p-1 text-white"
+                              className="absolute right-2 top-2 rounded bg-black/50 p-1 text-white hover:bg-black/70"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -385,13 +522,13 @@ export function ScenesStep() {
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-lg border-2 border-dashed py-10 text-center text-sm text-muted-foreground">
+                    <div className="flex h-full items-center justify-center rounded-lg border-2 border-dashed text-sm text-muted-foreground">
                       暂无场景资产
                     </div>
                   )}
                 </div>
               </div>
-            </>
+            </div>
           ) : (
             <div className="flex flex-1 items-center justify-center text-muted-foreground">
               <div className="text-center">
@@ -403,180 +540,6 @@ export function ScenesStep() {
         </div>
       </div>
 
-      {showSceneForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-lg rounded-xl bg-card shadow-xl">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="text-lg font-medium">
-                {editingSceneIndex !== null ? '编辑场景' : '新建场景'}
-              </h3>
-              <button
-                onClick={() => setShowSceneForm(false)}
-                className="rounded-lg p-2 hover:bg-muted"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-4 p-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium">场景名称</label>
-                <input
-                  type="text"
-                  value={sceneForm.name}
-                  onChange={(event) =>
-                    setSceneForm((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                  className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">地点</label>
-                  <input
-                    type="text"
-                    value={sceneForm.location}
-                    onChange={(event) =>
-                      setSceneForm((current) => ({
-                        ...current,
-                        location: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">时间</label>
-                  <select
-                    value={sceneForm.timeOfDay}
-                    onChange={(event) =>
-                      setSceneForm((current) => ({
-                        ...current,
-                        timeOfDay: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="清晨">清晨</option>
-                    <option value="白天">白天</option>
-                    <option value="黄昏">黄昏</option>
-                    <option value="夜晚">夜晚</option>
-                    <option value="深夜">深夜</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium">环境描述</label>
-                <textarea
-                  value={sceneForm.description}
-                  onChange={(event) =>
-                    setSceneForm((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                  className="min-h-[100px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium">场景图片</label>
-                {sceneForm.imageUrl ? (
-                  <div className="relative">
-                    <img
-                      src={sceneForm.imageUrl}
-                      alt="scene"
-                      className="h-32 w-full rounded-lg object-cover"
-                    />
-                    <button
-                      onClick={() =>
-                        setSceneForm((current) => ({ ...current, imageUrl: '' }))
-                      }
-                      className="absolute right-2 top-2 rounded bg-black/50 p-1 text-white"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <label className="flex h-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed hover:bg-muted/40">
-                    <Upload size={22} className="mb-2 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">点击上传场景图</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = (loadEvent) =>
-                          setSceneForm((current) => ({
-                            ...current,
-                            imageUrl: loadEvent.target?.result as string,
-                          }));
-                        reader.readAsDataURL(file);
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 border-t p-4">
-              <button
-                onClick={() => setShowSceneForm(false)}
-                className="rounded-lg border px-4 py-2 hover:bg-muted"
-              >
-                取消
-              </button>
-              <button
-                onClick={async () => {
-                  const nextScenes = [...scenesResult];
-                  const nextScene = {
-                    id:
-                      editingSceneIndex !== null
-                        ? nextScenes[editingSceneIndex]?.id
-                        : `scene-${Date.now()}`,
-                    ...sceneForm,
-                    name:
-                      sceneForm.name ||
-                      sceneForm.location ||
-                      `场景 ${scenesResult.length + 1}`,
-                    assets:
-                      editingSceneIndex !== null
-                        ? nextScenes[editingSceneIndex]?.assets || []
-                        : [],
-                    createdAt:
-                      editingSceneIndex !== null
-                        ? nextScenes[editingSceneIndex]?.createdAt
-                        : new Date().toISOString(),
-                  };
-
-                  if (editingSceneIndex !== null) {
-                    nextScenes[editingSceneIndex] = nextScene;
-                  } else {
-                    nextScenes.push(nextScene);
-                    setSelectedSceneIndex(nextScenes.length - 1);
-                  }
-
-                  await persistScenes(nextScenes);
-                  setShowSceneForm(false);
-                  setSceneForm(createEmptySceneForm());
-                }}
-                className="rounded-lg bg-primary px-4 py-2 text-primary-foreground hover:opacity-90"
-              >
-                {editingSceneIndex !== null ? '保存修改' : '创建场景'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <AssetGeneratorModal
         open={showAssetForm}
         title="新建场景资产"
@@ -585,26 +548,30 @@ export function ScenesStep() {
         referenceImage={referenceImage}
         setReferenceImage={setReferenceImage}
         generatingAsset={false}
+        assetType="scene"
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
           setReferenceImage(null);
         }}
         onSubmit={async () => {
-          if (selectedSceneIndex === null || !projectId) return;
+          if (activeIndex === null || !projectId) return;
 
           setError('');
 
           const token =
             typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
-          const promptParts = [assetForm.shotSize, assetForm.angle, assetForm.prompt].filter(
-            Boolean,
-          );
+          const scene = scenesResult[activeIndex];
+          const promptParts = [
+            scene.location,
+            scene.timeOfDay,
+            scene.weather,
+            assetForm.prompt,
+          ].filter(Boolean);
           const fullPrompt = promptParts.join(', ');
 
-          // 1. Add pending asset with placeholder — don't block on generation
           const nextScenes = [...scenesResult];
-          const nextAssets = nextScenes[selectedSceneIndex].assets || [];
+          const nextAssets = nextScenes[activeIndex].assets || [];
           const newAssetIndex = nextAssets.length;
           nextAssets.push({
             id: `asset-${Date.now()}`,
@@ -616,18 +583,16 @@ export function ScenesStep() {
             shotSize: assetForm.shotSize,
             createdAt: new Date().toISOString(),
           });
-          nextScenes[selectedSceneIndex] = {
-            ...nextScenes[selectedSceneIndex],
+          nextScenes[activeIndex] = {
+            ...nextScenes[activeIndex],
             assets: nextAssets,
           };
           await persistScenes(nextScenes);
 
-          // 2. Close modal immediately
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
           setReferenceImage(null);
 
-          // 3. Submit generation task
           try {
             const res = await fetch(`${API_URL}/api/generation/queue`, {
               method: 'POST',
@@ -652,15 +617,13 @@ export function ScenesStep() {
             const data = await res.json();
             const taskId: string = data.taskId;
 
-            // 4. Register pending mapping so WebSocket can update the right asset
             pendingScenesRef.current.set(taskId, {
-              sceneIndex: selectedSceneIndex,
+              sceneIndex: activeIndex,
               assetIndex: newAssetIndex,
             });
           } catch (submitError: any) {
-            // Rollback: remove the placeholder asset on failure
             const rollback = [...scenesResult];
-            rollback[selectedSceneIndex].assets?.pop();
+            rollback[activeIndex].assets?.pop();
             await persistScenes(rollback);
             setError(submitError.message || '场景资产生成失败');
           }
@@ -669,7 +632,7 @@ export function ScenesStep() {
 
       {showScriptSelect && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-xl bg-card shadow-xl">
+          <div className="w-full max-w-md rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b p-4">
               <h3 className="text-lg font-medium">选择剧本</h3>
               <button
@@ -763,7 +726,7 @@ export function ScenesStep() {
 
       {showScenePreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-card shadow-xl">
+          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
             <div className="flex items-center justify-between border-b p-4">
               <div>
                 <h3 className="text-lg font-medium">选择要保留的场景</h3>
@@ -833,7 +796,15 @@ export function ScenesStep() {
                 <button
                   onClick={async () => {
                     const selectedScenes = selectedSceneIndices
-                      .map((index) => aiGeneratedScenes[index])
+                      .map((index) => {
+                        const scene = aiGeneratedScenes[index];
+                        if (!scene) return null;
+                        // 将AI返回的type映射到location字段
+                        return {
+                          ...scene,
+                          location: scene.type || scene.location || '',
+                        };
+                      })
                       .filter(Boolean);
                     const nextScenes = [...scenesResult, ...selectedScenes];
                     await persistScenes(nextScenes);
@@ -850,7 +821,7 @@ export function ScenesStep() {
           </div>
         </div>
       )}
-    {/* 图片预览弹窗 */}
+
       {previewImage && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
@@ -869,6 +840,14 @@ export function ScenesStep() {
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+      )}
+
+      {panoramaImage && (
+        <PanoramaViewer
+          imageUrl={panoramaImage}
+          title={activeScene?.name || '场景全景图'}
+          onClose={() => setPanoramaImage(null)}
+        />
       )}
     </div>
   );

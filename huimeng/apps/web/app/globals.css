@@ -10,8 +10,8 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 238.7 83.5% 66.7%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
@@ -22,30 +22,30 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 238.7 83.5% 66.7%;
+    --ring: 217.2 91.2% 59.8%;
     --radius: 0.5rem;
   }
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 238.7 83.5% 66.7%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 238.7 83.5% 66.7%;
+  .dark, [data-theme="dark"] {
+    --background: 224 71.4% 8%;
+    --foreground: 213 31% 91%;
+    --card: 223 50% 14%;
+    --card-foreground: 213 31% 91%;
+    --popover: 223 50% 14%;
+    --popover-foreground: 213 31% 91%;
+    --primary: 217.2 85% 35%;
+    --primary-foreground: 213 31% 98%;
+    --secondary: 223 64.1% 12.2%;
+    --secondary-foreground: 213 31% 91%;
+    --muted: 223 64.1% 12.2%;
+    --muted-foreground: 215 20.2% 55.1%;
+    --accent: 223 64.1% 12.2%;
+    --accent-foreground: 213 31% 91%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 213 31% 91%;
+    --border: 223 64.1% 15.2%;
+    --input: 223 64.1% 15.2%;
+    --ring: 217.2 85% 35%;
   }
 }
 
@@ -55,5 +55,42 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  input, textarea, select {
+    @apply bg-background text-foreground border-border;
+  }
+  html.dark input, html.dark textarea, html.dark select,
+  html[data-theme="dark"] input, html[data-theme="dark"] textarea, html[data-theme="dark"] select,
+  .dark input, .dark textarea, .dark select {
+    background-color: hsl(220 10% 22%) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+  html.dark input::placeholder, html.dark textarea::placeholder,
+  html[data-theme="dark"] input::placeholder, html[data-theme="dark"] textarea::placeholder,
+  .dark input::placeholder, .dark textarea::placeholder {
+    color: hsl(var(--muted-foreground) / 0.6) !important;
+  }
+}
+
+/* Dark theme card shadows with subtle blue glow */
+@layer utilities {
+  .shadow-glow-dark {
+    box-shadow: 0 4px 20px hsl(var(--primary) / 0.08), 0 2px 8px hsl(0 0% 0% / 0.3);
+  }
+  .shadow-card-dark {
+    box-shadow: 0 2px 12px hsl(0 0% 0% / 0.4), inset 0 1px 0 hsl(var(--foreground) / 0.05);
+  }
+  .shadow-elevated-dark {
+    box-shadow: 0 8px 32px hsl(0 0% 0% / 0.5), 0 2px 8px hsl(0 0% 0% / 0.3);
+  }
+  /* Neon border gradient for card headers */
+  .neon-border-bottom {
+    border-bottom: 1px solid;
+    border-image: linear-gradient(90deg, hsl(var(--primary) / 0.1), hsl(var(--primary) / 0.4), hsl(var(--primary) / 0.1)) 1;
+    box-shadow: 0 2px 12px hsl(var(--primary) / 0.08);
+  }
+  .neon-header {
+    background: linear-gradient(180deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
   }
 }

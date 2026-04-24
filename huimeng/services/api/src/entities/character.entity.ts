@@ -30,6 +30,18 @@ export class Character {
   @Property({ type: 'string', nullable: true })
   voiceType?: string;
 
+  @Property({ type: 'text', nullable: true })
+  bodyType?: string;
+
+  @Property({ type: 'text', nullable: true })
+  hairstyle?: string;
+
+  @Property({ type: 'text', nullable: true })
+  clothing?: string;
+
+  @Property({ type: 'text', nullable: true })
+  equipment?: string;
+
   @Property({ type: 'json', nullable: true })
   imageUrls?: string[];
 
