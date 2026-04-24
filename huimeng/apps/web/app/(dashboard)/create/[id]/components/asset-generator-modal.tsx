@@ -19,6 +19,7 @@ type AssetGeneratorModalProps = {
   setAssetForm: Dispatch<SetStateAction<AssetForm>>;
   referenceImage: string | null;
   setReferenceImage: Dispatch<SetStateAction<string | null>>;
+  onReferenceImageSelected?: (base64Data: string) => Promise<string | undefined>;
   generatingAsset: boolean;
   onClose: () => void;
   onSubmit: () => Promise<void>;
@@ -330,6 +331,7 @@ export function AssetGeneratorModal({
   setAssetForm,
   referenceImage,
   setReferenceImage,
+  onReferenceImageSelected,
   generatingAsset,
   onClose,
   onSubmit,

@@ -1,5 +1,6 @@
 'use client';
 
+import { api } from '../../../../../../lib/api';
 import { useEffect, useRef, useState } from 'react';
 import {
   Edit2,
@@ -67,6 +68,8 @@ export function ScenesStep() {
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetForm, setAssetForm] = useState(createEmptyAssetForm());
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const referenceAssetIdRef = useRef<string | undefined>();
+  const referenceAssetContentRef = useRef<string | undefined>();
 
   const [showScriptSelect, setShowScriptSelect] = useState(false);
   const [selectedScriptForAI, setSelectedScriptForAI] = useState<number>(
@@ -107,21 +110,27 @@ export function ScenesStep() {
     projectId: projectId ?? undefined,
     onGenerationProgress: (data: GenerationProgressPayload) => {
       const pending = pendingScenesRef.current;
+      const mapping = pending.get(data.taskId);
+      if (!mapping) return;
+
       if (data.status === 'completed' && data.outputResult?.assets) {
-        const mapping = pending.get(data.taskId);
-        if (mapping) {
-          const assets = data.outputResult.assets as string[];
-          const nextScenes = [...scenesResult];
-          const scene = nextScenes[mapping.sceneIndex];
-          if (scene?.assets?.[mapping.assetIndex]) {
-            scene.assets[mapping.assetIndex] = {
-              ...scene.assets[mapping.assetIndex],
-              url: assets[0] || '/placeholder.png',
-            };
-            void persistScenes(nextScenes);
-          }
-          pending.delete(data.taskId);
+        const assets = data.outputResult.assets as string[];
+        const nextScenes = [...scenesResult];
+        const scene = nextScenes[mapping.sceneIndex];
+        if (scene?.assets?.[mapping.assetIndex]) {
+          scene.assets[mapping.assetIndex] = {
+            ...scene.assets[mapping.assetIndex],
+            url: assets[0] || '/placeholder.png',
+          };
+          void persistScenes(nextScenes);
         }
+        pending.delete(data.taskId);
+      } else if (data.status === 'failed') {
+        const nextScenes = [...scenesResult];
+        nextScenes[mapping.sceneIndex].assets?.splice(mapping.assetIndex, 1);
+        void persistScenes(nextScenes);
+        pending.delete(data.taskId);
+        setError(data.error || '资产生成失败');
       }
     },
   });
@@ -547,12 +556,44 @@ export function ScenesStep() {
         setAssetForm={setAssetForm}
         referenceImage={referenceImage}
         setReferenceImage={setReferenceImage}
+        onReferenceImageSelected={async (base64Data: string) => {
+          const token =
+            typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
+          try {
+            const base64Response = base64Data.split(',')[1];
+            const byteCharacters = atob(base64Response);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'image/png' });
+
+            const formData = new FormData();
+            formData.append('file', blob, 'reference.png');
+
+            const { data: uploadRes } = await api.post('/generation/assets/upload', formData, {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+              },
+            });
+            if (uploadRes?.id && uploadRes?.assetContent) {
+              referenceAssetIdRef.current = uploadRes.id;
+              referenceAssetContentRef.current = uploadRes.assetName;
+              return uploadRes.assetName;
+            }
+          } catch (uploadError: any) {
+            console.error(`Failed to upload reference image: ${uploadError.message}`);
+          }
+        }}
         generatingAsset={false}
         assetType="scene"
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
           setReferenceImage(null);
+          referenceAssetIdRef.current = undefined;
+          referenceAssetContentRef.current = undefined;
         }}
         onSubmit={async () => {
           if (activeIndex === null || !projectId) return;
@@ -594,7 +635,7 @@ export function ScenesStep() {
           setReferenceImage(null);
 
           try {
-            const res = await fetch(`${API_URL}/api/generation/queue`, {
+            const res = await fetch(`${API_URL}/api/generation/workflow`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -602,13 +643,13 @@ export function ScenesStep() {
               },
               body: JSON.stringify({
                 projectId,
-                taskType: 'createScenePicture-t2i',
+                taskType: referenceImage || referenceAssetIdRef.current ? 'createScenePicture-i2i' : 'createScenePicture-t2i',
                 prompt: fullPrompt,
-                inputParams: {
-                  reference_image: referenceImage,
-                  view_width: '720',
-                  view_height: '1280',
-                },
+                referenceAssetId: referenceAssetIdRef.current,
+                inParam: JSON.stringify({
+                  prompt: fullPrompt,
+                  image: referenceAssetContentRef.current,
+                }),
               }),
             });
 
