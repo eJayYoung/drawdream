@@ -592,8 +592,8 @@ export function CharactersStep() {
             });
             if (uploadRes?.id && uploadRes?.assetContent) {
               referenceAssetIdRef.current = uploadRes.id;
-              referenceAssetContentRef.current = uploadRes.assetContent;
-              return uploadRes.assetContent;
+              referenceAssetContentRef.current = uploadRes.assetName;
+              return uploadRes.assetName;
             }
           } catch (uploadError: any) {
             console.error(`Failed to upload reference image: ${uploadError.message}`);
@@ -659,7 +659,6 @@ export function CharactersStep() {
                 referenceAssetId: referenceAssetIdRef.current,
                 inParam: JSON.stringify({
                   prompt: fullPrompt,
-                  resolution: '',
                   image: referenceAssetContentRef.current,
                 }),
               }),

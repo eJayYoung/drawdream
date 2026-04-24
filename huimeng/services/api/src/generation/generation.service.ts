@@ -100,11 +100,7 @@ export class GenerationService {
       prompt: inParam.prompt || prompt,
       resolution,
     };
-    if (referenceAssetContent) {
-      finalInParam.image = referenceAssetContent;
-    } else if (inParam.image) {
-      finalInParam.image = inParam.image;
-    }
+
     const finalInParamStr = JSON.stringify(finalInParam);
 
     // 5. 提交到 ComfyUI 远程服务

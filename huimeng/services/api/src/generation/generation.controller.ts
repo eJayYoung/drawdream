@@ -38,7 +38,6 @@ export class GenerationController {
   @UseInterceptors(FileInterceptor('file'))
   async uploadAsset(@UploadedFile() file: MulterFile) {
     const result = await this.comfyUIService.uploadAsset(file.buffer, file.originalname);
-    console.log('Upload result:', result);
     return result;
   }
 
