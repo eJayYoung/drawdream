@@ -991,6 +991,9 @@ export function CharactersStep() {
                 projectId,
                 taskType: referenceImage || referenceAssetIdRef.current ? 'createRolePicture-i2i' : 'createRolePicture-t2i',
                 prompt: fullPrompt,
+                requestContext: {
+                  'imageId-1': referenceAssetIdRef.current,
+                }
               }),
             });
 

@@ -644,11 +644,9 @@ export function ScenesStep() {
                 projectId,
                 taskType: referenceImage || referenceAssetIdRef.current ? 'createScenePicture-i2i' : 'createScenePicture-t2i',
                 prompt: fullPrompt,
-                referenceAssetId: referenceAssetIdRef.current,
-                inParam: JSON.stringify({
-                  prompt: fullPrompt,
-                  image: referenceAssetContentRef.current,
-                }),
+                requestContext: {
+                  'imageId-1': referenceAssetIdRef.current,
+                },
               }),
             });
 
