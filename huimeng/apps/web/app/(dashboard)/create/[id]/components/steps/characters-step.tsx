@@ -898,6 +898,7 @@ export function CharactersStep() {
               headers: {
                 'Content-Type': 'multipart/form-data',
               },
+              params: { step: 'characters', projectId, characterId: selectedCharacterIndex !== null ? charactersResult[selectedCharacterIndex]?.id : undefined },
             });
             if (uploadRes?.id && uploadRes?.assetContent) {
               referenceAssetIdRef.current = uploadRes.id;
@@ -990,6 +991,8 @@ export function CharactersStep() {
               body: JSON.stringify({
                 projectId,
                 taskType: referenceImage || referenceAssetIdRef.current ? 'createRolePicture-i2i' : 'createRolePicture-t2i',
+                step: 'characters',
+                characterId: selectedCharacterIndex !== null ? charactersResult[selectedCharacterIndex]?.id : undefined,
                 prompt: fullPrompt,
                 requestContext: {
                   'imageId-1': referenceAssetIdRef.current,

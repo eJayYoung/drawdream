@@ -5,13 +5,18 @@ import { ComfyUIService } from "../common/comfyui.service";
 import { OssService } from "../common/oss.service";
 import { GenerationGateway } from "./generation.gateway";
 import { ProjectService } from "../project/project.service";
+import { MaterialsService } from "../materials/materials.service";
 
 interface PollState {
   userId: string;
   projectId: string;
   taskType: string;
+  step?: string;
+  characterId?: string;
+  sceneId?: string;
   episodeId?: string;
   storyboardId?: string;
+  requestContext?: Record<string, any>;
 }
 
 interface InParam {
@@ -24,6 +29,9 @@ interface ExecuteWorkflowParams {
   userId: string;
   projectId: string;
   taskType: string;
+  step?: string;
+  characterId?: string;
+  sceneId?: string;
   prompt: string;
   inParam?: string; // JSON.stringify({ prompt, resolution?, image? })
   episodeId?: string;
@@ -47,6 +55,7 @@ export class GenerationService {
     private readonly generationGateway: GenerationGateway,
     private readonly configService: ConfigService,
     private readonly projectService: ProjectService,
+    private readonly materialsService: MaterialsService,
   ) {}
 
   /**
@@ -74,7 +83,7 @@ export class GenerationService {
    * 5. 返回 taskId
    */
   async executeWorkflow(params: ExecuteWorkflowParams): Promise<{ taskId: string; status: string }> {
-    const { userId, projectId, taskType, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId, referenceAssetContent, requestContext } = params;
+    const { userId, projectId, taskType, step, characterId, sceneId, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId, referenceAssetContent, requestContext } = params;
 
     // 1. 解析 inParam
     let inParam: InParam;
@@ -119,8 +128,12 @@ export class GenerationService {
       userId,
       projectId,
       taskType,
+      step,
+      characterId,
+      sceneId,
       episodeId,
       storyboardId,
+      requestContext,
     };
 
     this.pollTaskStatus(comfyTaskId, taskType, pollState);
@@ -164,7 +177,25 @@ export class GenerationService {
 
         if (result.status === "success") {
           console.log(`[ComfyUI Images] ${JSON.stringify(result.images)}`);
-          const assetUrls = await this.fetchAndUploadAssets(result.images || []);
+          const images = result.images || [];
+          const assetUrls = await this.fetchAndUploadAssets(images);
+
+          // 保存到素材库
+          if (assetUrls.length > 0) {
+            const materials = images.map((assetId: string, index: number) => ({
+              assetId,
+              originFileName: assetId.split("/").pop() || assetId,
+              url: assetUrls[index] || '',
+              fileType: 'image' as const,
+              source: 'workflow' as const,
+              size: 0,
+              projectId: state.projectId,
+              metadata: { comfyTaskId, taskType, step: state.step, characterId: state.characterId, sceneId: state.sceneId },
+            }));
+            await this.materialsService.batchCreate(state.userId, materials);
+            this.logger.log(`Saved ${materials.length} materials to library`);
+          }
+
           this.generationGateway.notifyTaskUpdate(state.userId, {
             taskId: comfyTaskId,
             status: "completed",
@@ -256,7 +287,7 @@ export class GenerationService {
   /**
    * 获取 ComfyUI 资产文件
    */
-  private async fetchAssetFile(assetId: string): Promise<{ buffer?: Buffer; contentType?: string; error?: string }> {
+  async fetchAssetFile(assetId: string): Promise<{ buffer?: Buffer; contentType?: string; error?: string }> {
     try {
       const host = this.configService.get<string>("COMFYUI_HOST", "36.138.102.196");
       const port = this.configService.get<string>("COMFYUI_PORT", "8081");
@@ -277,6 +308,27 @@ export class GenerationService {
       this.logger.error(`Failed to get asset file: ${error.message}`);
       return { error: error.message };
     }
+  }
+
+  /**
+   * 批量获取 ComfyUI 资产文件 (并行)
+   */
+  async fetchBatchAssetFiles(assetIds: string[]): Promise<Record<string, { dataUrl?: string; error?: string }>> {
+    const results: Record<string, { dataUrl?: string; error?: string }> = {};
+
+    // 并行获取所有资产
+    const promises = assetIds.map(async (assetId) => {
+      const result = await this.fetchAssetFile(assetId);
+      if (result.buffer && result.contentType) {
+        const base64 = result.buffer.toString('base64');
+        results[assetId] = { dataUrl: `data:${result.contentType};base64,${base64}` };
+      } else {
+        results[assetId] = { error: result.error || 'Asset not found' };
+      }
+    });
+
+    await Promise.all(promises);
+    return results;
   }
 
   // ============ 查询接口 ==========

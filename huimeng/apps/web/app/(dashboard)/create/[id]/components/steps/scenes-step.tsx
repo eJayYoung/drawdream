@@ -575,6 +575,7 @@ export function ScenesStep() {
               headers: {
                 'Content-Type': 'multipart/form-data',
               },
+              params: { step: 'scenes', projectId, sceneId: activeIndex !== null ? scenesResult[activeIndex]?.id : undefined },
             });
             if (uploadRes?.id && uploadRes?.assetContent) {
               referenceAssetIdRef.current = uploadRes.id;
@@ -643,6 +644,8 @@ export function ScenesStep() {
               body: JSON.stringify({
                 projectId,
                 taskType: referenceImage || referenceAssetIdRef.current ? 'createScenePicture-i2i' : 'createScenePicture-t2i',
+                step: 'scenes',
+                sceneId: activeIndex !== null ? scenesResult[activeIndex]?.id : undefined,
                 prompt: fullPrompt,
                 requestContext: {
                   'imageId-1': referenceAssetIdRef.current,

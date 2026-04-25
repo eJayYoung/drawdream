@@ -93,7 +93,7 @@ export class ComfyUIService {
           'Origin': this.baseUrl,
           'Referer': `${this.baseUrl}/multi-angle`,
         },
-        timeout: 30000,
+        timeout: 120000, // 2 minutes for file upload
       });
 
       this.logger.log(`uploadAsset response: ${JSON.stringify(response.data)}`);
@@ -250,4 +250,24 @@ export class ComfyUIService {
     }
   }
 
+  /**
+   * 删除 ComfyUI 资产
+   * @param assetId 资产ID
+   */
+  async deleteAsset(assetId: string): Promise<void> {
+    try {
+      this.logger.log(`[ComfyUI] deleteAsset: DELETE ${this.baseUrl}/api/asset/${assetId}`);
+      await axios.delete(`${this.baseUrl}/api/asset/${assetId}`, {
+        headers: {
+          'Origin': this.baseUrl,
+          'Referer': `${this.baseUrl}/`,
+        },
+        timeout: 10000,
+      });
+      this.logger.log(`[ComfyUI] Asset ${assetId} deleted successfully`);
+    } catch (error: any) {
+      this.logger.error(`Failed to delete asset ${assetId}: ${error.message}`);
+      // 不抛出错误，删除本地记录为主
+    }
   }
+}

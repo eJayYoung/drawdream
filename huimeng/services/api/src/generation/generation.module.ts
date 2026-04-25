@@ -5,11 +5,13 @@ import { GenerationService } from './generation.service';
 import { GenerationGateway } from './generation.gateway';
 import { CommonModule } from '../common/common.module';
 import { ProjectModule } from '../project/project.module';
+import { MaterialsModule } from '../materials/materials.module';
 
 @Module({
   imports: [
     CommonModule,
     ProjectModule,
+    MaterialsModule,
     MulterModule.register({
       limits: { fileSize: 10 * 1024 * 1024 },
     }),
