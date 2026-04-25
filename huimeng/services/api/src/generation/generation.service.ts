@@ -5,13 +5,18 @@ import { ComfyUIService } from "../common/comfyui.service";
 import { OssService } from "../common/oss.service";
 import { GenerationGateway } from "./generation.gateway";
 import { ProjectService } from "../project/project.service";
+import { MaterialsService } from "../materials/materials.service";
 
 interface PollState {
   userId: string;
   projectId: string;
   taskType: string;
+  step?: string;
+  characterId?: string;
+  sceneId?: string;
   episodeId?: string;
   storyboardId?: string;
+  requestContext?: Record<string, any>;
 }
 
 interface InParam {
@@ -24,6 +29,9 @@ interface ExecuteWorkflowParams {
   userId: string;
   projectId: string;
   taskType: string;
+  step?: string;
+  characterId?: string;
+  sceneId?: string;
   prompt: string;
   inParam?: string; // JSON.stringify({ prompt, resolution?, image? })
   episodeId?: string;
@@ -47,6 +55,7 @@ export class GenerationService {
     private readonly generationGateway: GenerationGateway,
     private readonly configService: ConfigService,
     private readonly projectService: ProjectService,
+    private readonly materialsService: MaterialsService,
   ) {}
 
   /**
@@ -74,7 +83,7 @@ export class GenerationService {
    * 5. 返回 taskId
    */
   async executeWorkflow(params: ExecuteWorkflowParams): Promise<{ taskId: string; status: string }> {
-    const { userId, projectId, taskType, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId, referenceAssetContent, requestContext } = params;
+    const { userId, projectId, taskType, step, characterId, sceneId, prompt, inParam: inParamStr, episodeId, storyboardId, referenceAssetId, referenceAssetContent, requestContext } = params;
 
     // 1. 解析 inParam
     let inParam: InParam;
@@ -96,9 +105,8 @@ export class GenerationService {
     const aspectRatio = project?.aspectRatio || "16:9";
     const resolution = inParam.resolution || this.getResolution(aspectRatio);
 
-    // 4. 重新组装 inParam，保留原始字段但补充 resolution
+    // 4. 重新组装 inParam（只放 resolution，不放 prompt）
     const finalInParam: InParam = {
-      ...inParam,
       resolution,
     };
 
@@ -120,52 +128,17 @@ export class GenerationService {
       userId,
       projectId,
       taskType,
+      step,
+      characterId,
+      sceneId,
       episodeId,
       storyboardId,
+      requestContext,
     };
 
     this.pollTaskStatus(comfyTaskId, taskType, pollState);
 
     // 7. 立即返回 ComfyUI 的 taskId
-    return { taskId: comfyTaskId, status: "queued" };
-  }
-
-  /**
-   * 智能分镜 - 使用资产引用生成图片
-   */
-  async submitSmartStoryboard(params: {
-    userId: string;
-    projectId: string;
-    taskType: string;
-    prompt: string;
-    inParam: string;
-    requestContext: Record<string, string>;
-    episodeId?: string;
-    storyboardId?: string;
-  }): Promise<{ taskId: string; status: string }> {
-    const { userId, projectId, taskType, prompt, inParam: inParamStr, requestContext, episodeId, storyboardId } = params;
-
-    // 直接提交到 ComfyUI，不做 inParam 解析
-    let comfyTaskId: string;
-    try {
-      const submitResult = await this.comfyUIService.submitWorkflow(taskType, prompt, inParamStr, requestContext);
-      comfyTaskId = submitResult.prompt_id;
-      this.logger.log(`Smart storyboard submitted: taskId=${comfyTaskId}, projectId=${projectId}`);
-    } catch (error: any) {
-      this.logger.error(`Failed to submit smart storyboard: ${error.message}`);
-      throw error;
-    }
-
-    // 启动后台轮询
-    const pollState: PollState = {
-      userId,
-      projectId,
-      taskType,
-      episodeId,
-      storyboardId,
-    };
-    this.pollTaskStatus(comfyTaskId, taskType, pollState);
-
     return { taskId: comfyTaskId, status: "queued" };
   }
 
@@ -204,13 +177,30 @@ export class GenerationService {
 
         if (result.status === "success") {
           console.log(`[ComfyUI Images] ${JSON.stringify(result.images)}`);
-          const assetIds = result.images || [];
-          const assetUrls = await this.fetchAndUploadAssets(assetIds);
+          const images = result.images || [];
+          const assetUrls = await this.fetchAndUploadAssets(images);
+
+          // 保存到素材库
+          if (assetUrls.length > 0) {
+            const materials = images.map((assetId: string, index: number) => ({
+              assetId,
+              originFileName: assetId.split("/").pop() || assetId,
+              url: assetUrls[index] || '',
+              fileType: 'image' as const,
+              source: 'workflow' as const,
+              size: 0,
+              projectId: state.projectId,
+              metadata: { comfyTaskId, taskType, step: state.step, characterId: state.characterId, sceneId: state.sceneId },
+            }));
+            await this.materialsService.batchCreate(state.userId, materials);
+            this.logger.log(`Saved ${materials.length} materials to library`);
+          }
+
           this.generationGateway.notifyTaskUpdate(state.userId, {
             taskId: comfyTaskId,
             status: "completed",
             progress: 100,
-            outputs: { assets: assetUrls, comfyAssetIds: assetIds },
+            outputs: { assets: assetUrls },
           });
           this.generationGateway.notifyProjectProgress(state.projectId, {
             taskId: comfyTaskId,
@@ -218,7 +208,7 @@ export class GenerationService {
             storyboardId: state.storyboardId,
             status: "completed",
             progress: 100,
-            outputResult: { assets: assetUrls, comfyAssetIds: assetIds },
+            outputResult: { assets: assetUrls },
           });
           this.logger.log(`Task ${comfyTaskId} completed with ${assetUrls.length} assets`);
 
@@ -297,7 +287,7 @@ export class GenerationService {
   /**
    * 获取 ComfyUI 资产文件
    */
-  private async fetchAssetFile(assetId: string): Promise<{ buffer?: Buffer; contentType?: string; error?: string }> {
+  async fetchAssetFile(assetId: string): Promise<{ buffer?: Buffer; contentType?: string; error?: string }> {
     try {
       const host = this.configService.get<string>("COMFYUI_HOST", "36.138.102.196");
       const port = this.configService.get<string>("COMFYUI_PORT", "8081");
@@ -318,6 +308,27 @@ export class GenerationService {
       this.logger.error(`Failed to get asset file: ${error.message}`);
       return { error: error.message };
     }
+  }
+
+  /**
+   * 批量获取 ComfyUI 资产文件 (并行)
+   */
+  async fetchBatchAssetFiles(assetIds: string[]): Promise<Record<string, { dataUrl?: string; error?: string }>> {
+    const results: Record<string, { dataUrl?: string; error?: string }> = {};
+
+    // 并行获取所有资产
+    const promises = assetIds.map(async (assetId) => {
+      const result = await this.fetchAssetFile(assetId);
+      if (result.buffer && result.contentType) {
+        const base64 = result.buffer.toString('base64');
+        results[assetId] = { dataUrl: `data:${result.contentType};base64,${base64}` };
+      } else {
+        results[assetId] = { error: result.error || 'Asset not found' };
+      }
+    });
+
+    await Promise.all(promises);
+    return results;
   }
 
   // ============ 查询接口 ==========
@@ -359,22 +370,5 @@ export class GenerationService {
     error?: string,
   ): Promise<void> {
     this.logger.log(`Received ComfyUI callback for job ${jobId}, status: ${status}`);
-  }
-
-  /**
-   * 下载并上传资产到 OSS（公开方法，供 controller 调用）
-   */
-  async downloadAssetToOss(assetId: string, filename: string): Promise<string> {
-    const assetFile = await this.fetchAssetFile(assetId);
-    if (!assetFile.buffer) {
-      throw new Error(`Failed to fetch asset ${assetId}: ${assetFile.error}`);
-    }
-    const ossUrl = await this.ossService.uploadBuffer(
-      assetFile.buffer,
-      filename,
-      assetFile.contentType || 'image/png',
-    );
-    this.logger.log(`Asset ${assetId} uploaded to OSS: ${ossUrl}`);
-    return ossUrl;
   }
 }

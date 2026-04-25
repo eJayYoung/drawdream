@@ -81,12 +81,6 @@ export function ScenesStep() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [panoramaImage, setPanoramaImage] = useState<string | null>(null);
 
-  const [showAIEnrichModal, setShowAIEnrichModal] = useState(false);
-  const [aiEnrichText, setAIEnrichText] = useState('');
-  const [aiEnrichLoading, setAIEnrichLoading] = useState(false);
-
-  const [screenshotUploading, setScreenshotUploading] = useState(false);
-
   const pendingScenesRef = useRef<Map<string, { sceneIndex: number; assetIndex: number }>>(new Map());
 
   const [userId, setUserId] = useState('');
@@ -120,14 +114,12 @@ export function ScenesStep() {
 
       if (data.status === 'completed' && data.outputResult?.assets) {
         const assets = data.outputResult.assets as string[];
-        const comfyAssetIds = (data.outputResult as any)?.comfyAssetIds || [];
         const nextScenes = [...scenesResult];
         const scene = nextScenes[mapping.sceneIndex];
         if (scene?.assets?.[mapping.assetIndex]) {
           scene.assets[mapping.assetIndex] = {
             ...scene.assets[mapping.assetIndex],
             url: assets[0] || '/placeholder.png',
-            comfyAssetId: comfyAssetIds[0] || '',
           };
           void persistScenes(nextScenes);
         }
@@ -229,62 +221,6 @@ export function ScenesStep() {
     }
 
     await saveScenesToBackend(nextScenes);
-  };
-
-  const handlePanoramaScreenshot = async (blob: Blob) => {
-    if (!blob || !activeScene || !projectId) return;
-
-    console.log('[截图 blob 大小]', blob.size, 'bytes, type:', blob.type);
-    setScreenshotUploading(true);
-    try {
-      const token = localStorage.getItem('accessToken');
-      const formData = new FormData();
-      formData.append('file', blob, `panorama_${activeScene.id}_${Date.now()}.jpg`);
-      const res = await fetch(`${API_URL}/api/generation/screenshot/upload`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          // 不设置 Content-Type，让 fetch 自动设置 multipart/form-data + boundary
-        },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || '截图上传失败');
-      }
-
-      const data = await res.json();
-      console.log('[截图上传成功]', data);
-
-      // 获取上传后的 asset URL (ComfyUI 返回的是 asset id，需要拼成完整 URL)
-      const assetUrl = data.url || data.assetUrl || data.filename;
-
-      // 添加到场景资产
-      const nextScenes = [...scenesResult];
-      const newAsset = {
-        id: `asset-${Date.now()}`,
-        type: 'image' as const,
-        url: assetUrl,
-        comfyAssetId: data.id, // ComfyUI 资产 ID，用于智能分镜引用
-        prompt: `360全景截图 - ${activeScene.name || activeScene.location || '场景'}`,
-        createdAt: new Date().toISOString(),
-      };
-
-      if (!nextScenes[activeIndex!].assets) {
-        nextScenes[activeIndex!].assets = [];
-      }
-      nextScenes[activeIndex!].assets.push(newAsset);
-      await persistScenes(nextScenes);
-
-      // 关闭全景查看器
-      setPanoramaImage(null);
-    } catch (err: any) {
-      console.error('[截图上传失败]', err);
-      setError(err.message || '截图上传失败');
-    } finally {
-      setScreenshotUploading(false);
-    }
   };
 
   const handleAddScene = async () => {
@@ -475,21 +411,7 @@ export function ScenesStep() {
                     </div>
 
                     <div>
-                      <div className="mb-1 flex items-center justify-between">
-                        <label className="block text-sm font-medium">环境描述</label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAIEnrichText(sceneForm.description);
-                            setShowAIEnrichModal(true);
-                          }}
-                          disabled={!sceneForm.description}
-                          className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-white hover:bg-primary/90 disabled:opacity-50"
-                        >
-                          <Sparkles size={12} />
-                          AI 丰富细节
-                        </button>
-                      </div>
+                      <label className="mb-1 block text-sm font-medium">环境描述</label>
                       <textarea
                         value={sceneForm.description}
                         onChange={(e) => setSceneForm((current) => ({ ...current, description: e.target.value }))}
@@ -528,20 +450,11 @@ export function ScenesStep() {
                   <span className="text-sm font-medium">场景资产</span>
                   <button
                     onClick={() => {
-                      const scene = activeScene;
-                      const sceneInfo = [
-                        scene.name && `场景名: ${scene.name}`,
-                        scene.location && `地点: ${scene.location}`,
-                        scene.timeOfDay && `时间: ${scene.timeOfDay}`,
-                        scene.weather && `天气: ${scene.weather}`,
-                        scene.description && `描述: ${scene.description}`,
-                        scene.elements?.length ? `元素: ${scene.elements.join('、')}` : null,
-                      ].filter(Boolean).join(', ');
                       setAssetForm({
                         ...createEmptyAssetForm(),
-                        prompt: sceneInfo,
+                        prompt: `${activeScene.location || ''} ${activeScene.timeOfDay || ''} ${activeScene.weather || ''} ${activeScene.description || ''}`.trim(),
                       });
-                      setReferenceImage(scene.imageUrl || null);
+                      setReferenceImage(activeScene.imageUrl || null);
                       setShowAssetForm(true);
                     }}
                     className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
@@ -568,7 +481,16 @@ export function ScenesStep() {
                                     alt={asset.prompt}
                                     className="max-h-full max-w-full object-contain"
                                   />
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
+                                  <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 transition-colors group-hover:bg-black/30">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPanoramaImage(asset.url);
+                                      }}
+                                      className="rounded-lg bg-black/50 p-2 text-white hover:bg-black/70"
+                                    >
+                                      <MapPin size={18} />
+                                    </button>
                                     <ZoomIn
                                       size={24}
                                       className="text-white opacity-0 transition-opacity group-hover:opacity-100"
@@ -586,50 +508,18 @@ export function ScenesStep() {
                                 <Film size={24} className="text-muted-foreground" />
                               </div>
                             )}
-                            <div className="absolute right-2 top-2 flex items-center gap-1">
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const token = localStorage.getItem('accessToken');
-                                    const res = await fetch(`${API_URL}/api/generation/proxy-image`, {
-                                      method: 'POST',
-                                      headers: {
-                                        'Content-Type': 'application/json',
-                                        Authorization: `Bearer ${token}`,
-                                      },
-                                      body: JSON.stringify({ imageUrl: asset.url }),
-                                    });
-                                    if (!res.ok) throw new Error('获取图片失败');
-                                    const data = await res.json();
-                                    setPanoramaImage(data.base64);
-                                  } catch (err: any) {
-                                    console.error('[VR] 获取图片失败:', err);
-                                    setError(err.message || '获取图片失败');
-                                  }
-                                }}
-                                className="rounded bg-black/50 p-1.5 text-white hover:bg-black/70"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M3 8a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z"/>
-                                  <circle cx="8" cy="12" r="2"/>
-                                  <circle cx="16" cy="12" r="2"/>
-                                  <path d="M12 4v4"/>
-                                </svg>
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  const nextScenes = [...scenesResult];
-                                  nextScenes[activeIndex!].assets = (
-                                    nextScenes[activeIndex!].assets || []
-                                  ).filter((_: any, assetIndex: number) => assetIndex !== index);
-                                  await persistScenes(nextScenes);
-                                }}
-                                className="rounded bg-black/50 p-1 text-white hover:bg-black/70"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
+                            <button
+                              onClick={async () => {
+                                const nextScenes = [...scenesResult];
+                                nextScenes[activeIndex!].assets = (
+                                  nextScenes[activeIndex!].assets || []
+                                ).filter((_: any, assetIndex: number) => assetIndex !== index);
+                                await persistScenes(nextScenes);
+                              }}
+                              className="absolute right-2 top-2 rounded bg-black/50 p-1 text-white hover:bg-black/70"
+                            >
+                              <Trash2 size={12} />
+                            </button>
                           </div>
                           <div className="p-2">
                             <div className="line-clamp-2 text-xs text-muted-foreground">
@@ -685,6 +575,7 @@ export function ScenesStep() {
               headers: {
                 'Content-Type': 'multipart/form-data',
               },
+              params: { step: 'scenes', projectId, sceneId: activeIndex !== null ? scenesResult[activeIndex]?.id : undefined },
             });
             if (uploadRes?.id && uploadRes?.assetContent) {
               referenceAssetIdRef.current = uploadRes.id;
@@ -697,18 +588,6 @@ export function ScenesStep() {
         }}
         generatingAsset={false}
         assetType="scene"
-        existingAssets={scenesResult.flatMap((s, si) =>
-          (s.assets || []).map((a: any, ai: number) => ({
-            id: a.id || `scene-${si}-${ai}`,
-            url: a.url,
-            name: `${s.name || `场景${si + 1}`}资产${ai + 1}`,
-            comfyAssetId: a.comfyAssetId,
-          }))
-        )}
-        onExistingAssetSelected={(asset) => {
-          console.log('[Select Existing Asset]', asset);
-          referenceAssetIdRef.current = (asset as any).comfyAssetId || undefined;
-        }}
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
@@ -723,6 +602,14 @@ export function ScenesStep() {
 
           const token =
             typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
+          const scene = scenesResult[activeIndex];
+          const promptParts = [
+            scene.location,
+            scene.timeOfDay,
+            scene.weather,
+            assetForm.prompt,
+          ].filter(Boolean);
+          const fullPrompt = promptParts.join(', ');
 
           const nextScenes = [...scenesResult];
           const nextAssets = nextScenes[activeIndex].assets || [];
@@ -731,7 +618,7 @@ export function ScenesStep() {
             id: `asset-${Date.now()}`,
             type: assetForm.type,
             url: '/placeholder.png',
-            prompt: assetForm.prompt,
+            prompt: fullPrompt,
             tags: [],
             angle: assetForm.angle,
             shotSize: assetForm.shotSize,
@@ -756,8 +643,10 @@ export function ScenesStep() {
               },
               body: JSON.stringify({
                 projectId,
-                taskType: 'createRolePicture-i2i',
-                prompt: assetForm.prompt,
+                taskType: referenceImage || referenceAssetIdRef.current ? 'createScenePicture-i2i' : 'createScenePicture-t2i',
+                step: 'scenes',
+                sceneId: activeIndex !== null ? scenesResult[activeIndex]?.id : undefined,
+                prompt: fullPrompt,
                 requestContext: {
                   'imageId-1': referenceAssetIdRef.current,
                 },
@@ -999,114 +888,7 @@ export function ScenesStep() {
           imageUrl={panoramaImage}
           title={activeScene?.name || '场景全景图'}
           onClose={() => setPanoramaImage(null)}
-          onScreenshot={handlePanoramaScreenshot}
         />
-      )}
-
-      {showAIEnrichModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-card shadow-[0_0_60px_hsl(45_70%_70%_/_0.2),_0_12px_48px_hsl(0_0%_0%_/_0.4)]">
-            <div className="flex items-center justify-between border-b p-4">
-              <div className="flex items-center gap-2">
-                <Sparkles size={18} className="text-primary" />
-                <h3 className="text-lg font-medium">AI 丰富场景细节</h3>
-              </div>
-              <button
-                onClick={() => setShowAIEnrichModal(false)}
-                className="rounded-lg p-2 hover:bg-muted"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="flex-1 space-y-4 overflow-auto p-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium">原始描述</label>
-                <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
-                  {sceneForm.description || '（无）'}
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <label className="block text-sm font-medium">丰富后的描述</label>
-                  <button
-                    onClick={async () => {
-                      if (!aiEnrichText.trim()) return;
-                      setAIEnrichLoading(true);
-                      try {
-                        const token = localStorage.getItem('accessToken');
-
-                        const res = await fetch(`${API_URL}/api/workflow/projects/${projectId}/scenes/enrich`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${token}`,
-                          },
-                          body: JSON.stringify({
-                            description: aiEnrichText,
-                            location: sceneForm.location,
-                            timeOfDay: sceneForm.timeOfDay,
-                            weather: sceneForm.weather,
-                          }),
-                        });
-
-                        if (!res.ok) throw new Error('AI 丰富失败');
-                        const data = await res.json();
-                        setAIEnrichText(data.enriched || aiEnrichText);
-                      } catch (err: any) {
-                        setError(err.message || 'AI 丰富失败');
-                      } finally {
-                        setAIEnrichLoading(false);
-                      }
-                    }}
-                    disabled={aiEnrichLoading || !aiEnrichText.trim()}
-                    className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {aiEnrichLoading ? (
-                      <>
-                        <Loader2 size={14} className="animate-spin" />
-                        AI 丰富中...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={14} />
-                        让 AI 丰富
-                      </>
-                    )}
-                  </button>
-                </div>
-                <textarea
-                  value={aiEnrichText}
-                  onChange={(e) => setAIEnrichText(e.target.value)}
-                  placeholder="描述场景的细节，如：物品材质、光影效果、色彩氛围等..."
-                  className="min-h-[200px] w-full resize-none rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  AI 将根据场景的时间、地点、天气等信息，丰富场景的细节描述，使生成画面更准确。
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 border-t p-4">
-              <button
-                onClick={() => setShowAIEnrichModal(false)}
-                className="rounded-lg border px-4 py-2 hover:bg-muted"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  setSceneForm((current) => ({ ...current, description: aiEnrichText }));
-                  setShowAIEnrichModal(false);
-                }}
-                className="rounded-lg bg-primary px-4 py-2 text-primary-foreground hover:opacity-90"
-              >
-                应用到环境描述
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

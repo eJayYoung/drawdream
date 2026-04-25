@@ -78,7 +78,8 @@
       "Bash(npx next:*)",
       "Bash(xxd /Users/ejay/drawdream-platform/huimeng/apps/web/app/\\\\\\(dashboard\\\\\\)/create/\\\\[id\\\\]/components/steps/characters-step.tsx)",
       "Bash(git -C /Users/ejay/drawdream-platform show HEAD:huimeng/apps/web/app/\\\\\\(dashboard\\\\\\)/create/\\\\[id\\\\]/components/steps/characters-step.tsx)",
-      "Bash(git -C /Users/ejay/drawdream-platform diff huimeng/apps/web/app/\\\\\\(dashboard\\\\\\)/create/\\\\[id\\\\]/components/steps/characters-step.tsx)"
+      "Bash(git -C /Users/ejay/drawdream-platform diff huimeng/apps/web/app/\\\\\\(dashboard\\\\\\)/create/\\\\[id\\\\]/components/steps/characters-step.tsx)",
+      "Bash(psql \"postgresql://postgres:postgres@localhost:5432/huimeng\" -c \"\\\\dt\")"
     ]
   }
 }

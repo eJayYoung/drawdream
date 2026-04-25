@@ -9,7 +9,8 @@ import { WorkflowModule } from './workflow/workflow.module';
 import { GenerationModule } from './generation/generation.module';
 import { MediaModule } from './media/media.module';
 import { CommonModule } from './common/common.module';
-import { Project, Episode, Character } from './entities';
+import { MaterialsModule } from './materials/materials.module';
+import { Project, Episode, Character, MaterialLibrary } from './entities';
 import { LoggingInterceptor } from './common/logging.interceptor';
 
 @Module({
@@ -21,7 +22,7 @@ import { LoggingInterceptor } from './common/logging.interceptor';
     MikroOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        entities: [Project, Episode, Character],
+        entities: [Project, Episode, Character, MaterialLibrary],
         dbName: configService.get('POSTGRES_DB') || 'huimeng',
         host: configService.get('POSTGRES_HOST') || 'localhost',
         port: parseInt(configService.get('POSTGRES_PORT') || '5432'),
@@ -40,6 +41,7 @@ import { LoggingInterceptor } from './common/logging.interceptor';
     WorkflowModule,
     GenerationModule,
     MediaModule,
+    MaterialsModule,
   ],
   providers: [LoggingInterceptor],
 })

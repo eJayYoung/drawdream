@@ -6,15 +6,15 @@ import {
   UseGuards,
   Request,
   Body,
+  Query,
   UseInterceptors,
   UploadedFile,
-  BadRequestException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GenerationService } from './generation.service';
 import { ComfyUIService } from '../common/comfyui.service';
+import { MaterialsService } from '../materials/materials.service';
 import { OssService } from '../common/oss.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 
@@ -34,15 +34,73 @@ export class GenerationController {
   constructor(
     private readonly generationService: GenerationService,
     private readonly comfyUIService: ComfyUIService,
+    private readonly materialsService: MaterialsService,
     private readonly ossService: OssService,
-    private readonly configService: ConfigService,
   ) {}
 
+  @Get('assets/:assetId/dataurl')
+  @ApiOperation({ summary: '获取资产的data URL' })
+  async getAssetDataUrl(@Param('assetId') assetId: string) {
+    const assetResult = await this.generationService.fetchAssetFile(assetId);
+    if (assetResult.buffer && assetResult.contentType) {
+      const base64 = assetResult.buffer.toString('base64');
+      const dataUrl = `data:${assetResult.contentType};base64,${base64}`;
+      return { dataUrl };
+    } else {
+      return { error: 'Asset not found' };
+    }
+  }
+
+  @Post('assets/batch-dataurl')
+  @ApiOperation({ summary: '批量获取资产data URL' })
+  async getBatchAssetDataUrl(@Body() body: { assetIds: string[] }) {
+    const { assetIds } = body;
+    if (!assetIds || !Array.isArray(assetIds)) {
+      return { error: 'assetIds array required' };
+    }
+    const results = await this.generationService.fetchBatchAssetFiles(assetIds);
+    return results;
+  }
+
   @Post('assets/upload')
-  @ApiOperation({ summary: '上传资产到 OSS' })
+  @ApiOperation({ summary: '上传资产到ComfyUI' })
   @UseInterceptors(FileInterceptor('file'))
-  async uploadAsset(@UploadedFile() file: MulterFile) {
-    const result = await this.comfyUIService.uploadAsset(file.buffer, file.originalname);
+  async uploadAsset(
+    @UploadedFile() file: MulterFile,
+    @Request() req: any,
+    @Query('step') step?: string,
+    @Query('projectId') projectId?: string,
+    @Query('characterId') characterId?: string,
+    @Query('sceneId') sceneId?: string,
+  ) {
+    // 并行上传到 OSS 和 ComfyUI
+    const [ossUrl, result] = await Promise.all([
+      this.ossService.uploadBuffer(file.buffer, file.originalname, file.mimetype),
+      this.comfyUIService.uploadAsset(file.buffer, file.originalname),
+    ]);
+    const data = result?.data || {};
+
+    // fileType: PICTURE -> image, VIDEO -> video, AUDIO -> audio
+    const fileTypeMap: Record<string, 'image' | 'video' | 'audio'> = {
+      PICTURE: 'image',
+      VIDEO: 'video',
+      AUDIO: 'audio',
+    };
+    const fileType = fileTypeMap[data.fileType] || 'image';
+
+    // 保存到素材库，使用 OSS URL
+    await this.materialsService.create(req.user.id, {
+      assetId: data.id?.toString() || '',
+      originFileName: data.assetName || file.originalname,
+      url: ossUrl,
+      fileType,
+      source: 'upload',
+      size: file.size,
+      mimeType: file.mimetype,
+      projectId,
+      metadata: { step, characterId, sceneId },
+    });
+
     return result;
   }
 
@@ -54,6 +112,9 @@ export class GenerationController {
     body: {
       projectId: string;
       taskType: string;
+      step?: string;
+      characterId?: string;
+      sceneId?: string;
       prompt: string;
       inParam: string; // JSON.stringify({ prompt, resolution?, image? })
       episodeId?: string;
@@ -67,6 +128,9 @@ export class GenerationController {
       userId: req.user.id,
       projectId: body.projectId,
       taskType: body.taskType,
+      step: body.step,
+      characterId: body.characterId,
+      sceneId: body.sceneId,
       prompt: body.prompt,
       inParam: body.inParam,
       episodeId: body.episodeId,
@@ -75,82 +139,6 @@ export class GenerationController {
       referenceAssetContent: body.referenceAssetContent,
       requestContext: body.requestContext,
     });
-    return { taskId: result.taskId, status: result.status };
-  }
-
-  @Post('proxy-image')
-  @ApiOperation({ summary: '代理获取图片（解决跨域）' })
-  async proxyImage(@Body() body: { imageUrl: string }) {
-    const result = await this.ossService.proxyImage(body.imageUrl);
-    return result;
-  }
-
-  @Post('screenshot/upload')
-  @ApiOperation({ summary: '上传360全景截图到ComfyUI' })
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadScreenshot(@UploadedFile() file: MulterFile) {
-    console.log('[screenshot/upload] received file:', file ? { fieldname: file.fieldname, originalname: file.originalname, size: file.size, mimetype: file.mimetype } : 'null');
-    try {
-      const buffer = file.buffer;
-      const filename = file.originalname || `panorama_screenshot_${Date.now()}.jpg`;
-
-      // 上传到 ComfyUI，获取 asset id，然后下载后上传 OSS
-      const uploadResult = await this.comfyUIService.uploadAsset(buffer, filename);
-      console.log('[screenshot/upload] uploadResult:', JSON.stringify(uploadResult));
-      // ComfyUI 返回格式是 { code, data: { id, assetContent }, message }
-      const assetId = uploadResult?.data?.id;
-      console.log('[screenshot/upload] assetId:', assetId);
-      let displayUrl = '';
-
-      if (assetId) {
-        displayUrl = await this.generationService.downloadAssetToOss(assetId, filename);
-      }
-
-      console.log('[screenshot/upload] displayUrl:', displayUrl);
-      return { url: displayUrl };
-    } catch (error: any) {
-      throw new BadRequestException(`截图上传失败: ${error.message}`);
-    }
-  }
-
-  @Post('smart-storyboard')
-  @ApiOperation({ summary: '智能分镜 - 使用资产引用生成图片' })
-  async smartStoryboard(
-    @Request() req: any,
-    @Body()
-    body: {
-      projectId: string;
-      prompt: string;
-      assetIds: string[]; // ComfyUI asset IDs in order: imageId-1, imageId-2, etc.
-      inParam?: string;
-      episodeId?: string;
-      storyboardId?: string;
-    },
-  ) {
-    const { projectId, prompt, assetIds, inParam: inParamStr, episodeId, storyboardId } = body;
-
-    // 构建 requestContext: { "imageId-1": "assetId1", "imageId-2": "assetId2", ... }
-    const requestContext: Record<string, string> = {};
-    assetIds.forEach((assetId, index) => {
-      requestContext[`imageId-${index + 1}`] = assetId;
-    });
-
-    // 构建 inParam
-    const finalInParamStr = inParamStr || JSON.stringify(
-      Object.fromEntries(assetIds.map((_, index) => [`imageId-${index + 1}`, '']))
-    );
-
-    const result = await this.generationService.submitSmartStoryboard({
-      userId: req.user.id,
-      projectId,
-      taskType: 'createStoryBoard',
-      prompt,
-      inParam: finalInParamStr,
-      requestContext,
-      episodeId,
-      storyboardId,
-    });
-
     return { taskId: result.taskId, status: result.status };
   }
 }
