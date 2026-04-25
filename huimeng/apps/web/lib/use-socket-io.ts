@@ -12,7 +12,7 @@ export interface GenerationProgressPayload {
   storyboardId?: string;
   status: string;
   progress: number;
-  outputResult?: Record<string, unknown>;
+  outputResult?: Record<string, unknown> & { comfyAssetIds?: string[] };
   error?: string;
 }
 

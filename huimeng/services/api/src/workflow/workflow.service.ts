@@ -354,6 +354,28 @@ export class WorkflowService {
     }
   }
 
+  async enrichSceneDescription(
+    description: string,
+    location?: string,
+    timeOfDay?: string,
+    weather?: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(`Enriching scene description`);
+      const enriched = await this.llmService.enrichSceneDescription(
+        description,
+        location,
+        timeOfDay,
+        weather,
+      );
+      this.logger.log(`Scene description enriched successfully`);
+      return enriched;
+    } catch (error: any) {
+      this.logger.error(`Failed to enrich scene description: ${error.message}`);
+      throw error;
+    }
+  }
+
   async getEpisode(episodeId: string): Promise<any> {
     return this.episodes.get(episodeId);
   }

@@ -203,4 +203,21 @@ export class WorkflowController {
     this.logger.log(`expandScript result: ${result}`);
     return { content: result };
   }
+
+  @Post('projects/:projectId/scenes/enrich')
+  @ApiOperation({ summary: 'AI丰富场景描述' })
+  async enrichSceneDescription(
+    @Param('projectId') projectId: string,
+    @Body() body: { description: string; location?: string; timeOfDay?: string; weather?: string },
+  ) {
+    this.logger.log(`enrichSceneDescription - projectId: ${projectId}`);
+    const result = await this.workflowService.enrichSceneDescription(
+      body.description,
+      body.location,
+      body.timeOfDay,
+      body.weather,
+    );
+    this.logger.log(`enrichSceneDescription result: ${result}`);
+    return { enriched: result };
+  }
 }

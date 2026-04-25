@@ -727,12 +727,12 @@ export function StoryboardStep() {
   // @ mention for character and scene assets in image prompt
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionDropdownIndex, setMentionDropdownIndex] = useState(-1);
-  // Track selected assets by @ mention: { displayText: "@名称", imageUrl: "...", type: "character" | "scene" }
-  const [mentionAssets, setMentionAssets] = useState<{ displayText: string; imageUrl: string; type: string }[]>([]);
+  // Track selected assets by @ mention: { displayText: "@名称", imageUrl: "...", comfyAssetId: "...", type: "character" | "scene" }
+  const [mentionAssets, setMentionAssets] = useState<{ displayText: string; imageUrl: string; comfyAssetId: string; type: string }[]>([]);
 
   // Get all character and scene assets for @ mention dropdown
   const mentionOptions = useMemo(() => {
-    const options: { id: string; name: string; imageUrl: string; type: string }[] = [];
+    const options: { id: string; name: string; imageUrl: string; comfyAssetId: string; type: string }[] = [];
 
     // Add character assets
     charactersResult.forEach((char: any, charIndex: number) => {
@@ -743,6 +743,7 @@ export function StoryboardStep() {
               id: `char-${charIndex}-${assetIndex}`,
               name: char.name || `角色${charIndex + 1}`,
               imageUrl: asset.url,
+              comfyAssetId: asset.comfyAssetId || '',
               type: 'character',
             });
           }
@@ -759,6 +760,7 @@ export function StoryboardStep() {
               id: `scene-${sceneIndex}-${assetIndex}`,
               name: scene.name || `场景${sceneIndex + 1}`,
               imageUrl: asset.url,
+              comfyAssetId: asset.comfyAssetId || '',
               type: 'scene',
             });
           }
@@ -801,8 +803,8 @@ export function StoryboardStep() {
         const typePrefix = option.type === 'scene' ? '[场景]' : '';
         const newPrompt = before + '@' + typePrefix + option.name + ' ';
         updateDraft({ imagePrompt: newPrompt });
-        // Store the mention with image URL
-        setMentionAssets(prev => [...prev, { displayText: `@${option.name}`, imageUrl: option.imageUrl, type: option.type }]);
+        // Store the mention with image URL and comfyAssetId
+        setMentionAssets(prev => [...prev, { displayText: `@${option.name}`, imageUrl: option.imageUrl, comfyAssetId: option.comfyAssetId, type: option.type }]);
       }
     }
     setShowMentionDropdown(false);
@@ -1353,6 +1355,25 @@ export function StoryboardStep() {
       ].filter(Boolean),
     ).slice(0, 3);
 
+    // 检查是否有 @ 引用且都有 comfyAssetId，如果有则用智能分镜
+    // 从源数据重新查找最新的 comfyAssetId（因为 mentionAssets 可能是引用时的快照）
+    const mentionWithAssetIds = mentionAssets
+      .map(m => {
+        // 从 charactersResult 和 scenesResult 中查找最新的 comfyAssetId
+        let comfyAssetId = m.comfyAssetId;
+        for (const char of charactersResult) {
+          const asset = char.assets?.find((a: any) => a.url === m.imageUrl || a.id === m.displayText);
+          if (asset?.comfyAssetId) comfyAssetId = asset.comfyAssetId;
+        }
+        for (const scene of scenesResult) {
+          const asset = scene.assets?.find((a: any) => a.url === m.imageUrl || a.id === m.displayText);
+          if (asset?.comfyAssetId) comfyAssetId = asset.comfyAssetId;
+        }
+        return { ...m, comfyAssetId };
+      })
+      .filter(m => m.comfyAssetId);
+    const hasSmartStoryboard = mentionWithAssetIds.length > 0;
+
     let taskType =
       project?.aspectRatio === "9:16"
         ? "scene_image_portrait"
@@ -1362,7 +1383,20 @@ export function StoryboardStep() {
       negative_prompt: negativePrompt,
     };
 
-    if (references.length > 1) {
+    if (hasSmartStoryboard) {
+      taskType = "createStoryBoard";
+      // 构建智能分镜 prompt：把 @资产名 替换成 图1, 图2 等
+      let smartPrompt = prompt;
+      mentionWithAssetIds.forEach((m, index) => {
+        const regex = new RegExp(m.displayText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        smartPrompt = smartPrompt.replace(regex, `图${index + 1}`);
+      });
+      inputParams = {
+        prompt: smartPrompt,
+        negative_prompt: negativePrompt,
+        assetIds: mentionWithAssetIds.map(m => m.comfyAssetId),
+      };
+    } else if (references.length > 1) {
       taskType = "multi_ref_image";
       inputParams = {
         reference_images: references,
@@ -1399,18 +1433,47 @@ export function StoryboardStep() {
     setHasUnsavedChanges(false);
 
     try {
-      const queueResponse = await fetch(`${API_URL}/api/generation/queue`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          projectId,
-          taskType,
-          inputParams,
-        }),
-      });
+      let queueResponse;
+      if (hasSmartStoryboard) {
+        // 智能分镜：使用资产引用
+        const smartParams = inputParams as { prompt: string; negative_prompt: string; assetIds: string[] };
+        queueResponse = await fetch(`${API_URL}/api/generation/smart-storyboard`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            projectId,
+            prompt: smartParams.prompt,
+            assetIds: smartParams.assetIds,
+            episodeId: activeStoryboard.episodeId,
+            storyboardId: activeStoryboard.id,
+          }),
+        });
+      } else {
+        // 普通生成：调 workflow 接口
+        const inParamStr = JSON.stringify({
+          prompt: (inputParams.prompt as string) || '',
+          negative_prompt: (inputParams.negative_prompt as string) || '',
+          ...inputParams,
+        });
+        queueResponse = await fetch(`${API_URL}/api/generation/workflow`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            projectId,
+            taskType,
+            prompt: (inputParams.prompt as string) || '',
+            inParam: inParamStr,
+            episodeId: activeStoryboard.episodeId,
+            storyboardId: activeStoryboard.id,
+          }),
+        });
+      }
 
       if (!queueResponse.ok) {
         throw new Error("提交分镜图任务失败。");

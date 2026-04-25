@@ -3,7 +3,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  transpilePackages: ['@huimeng/shared-types'],
+  transpilePackages: ['@huimeng/shared-types', 'pannellum-react'],
   images: {
     remotePatterns: [
       {

@@ -12,6 +12,13 @@ type AssetForm = {
   shotSize: string;
 };
 
+type ExistingAsset = {
+  id: string;
+  url: string;
+  name?: string;
+  comfyAssetId?: string;
+};
+
 type AssetGeneratorModalProps = {
   open: boolean;
   title: string;
@@ -26,6 +33,8 @@ type AssetGeneratorModalProps = {
   setLocalError?: (error: string | null) => void;
   characterGender?: string;
   assetType?: 'character' | 'scene';
+  existingAssets?: ExistingAsset[];
+  onExistingAssetSelected?: (asset: ExistingAsset) => void;
 };
 
 // 标签映射表（按性别区分）
@@ -231,6 +240,20 @@ const FEMALE_CATEGORIES = TAG_CATEGORIES.female;
 
 // 场景标签映射表
 const SCENE_TAG_CATEGORIES = {
+  cameraPosition: {
+    label: '摄像机位置',
+    tags: {
+      '场景中央': 'center of scene camera position',
+      '场景左侧': 'left side of scene',
+      '场景右侧': 'right side of scene',
+      '场景边缘': 'edge of scene',
+      '场景角落': 'corner of scene',
+      '门口': 'doorway entrance camera',
+      '窗边': 'window side camera',
+      '高处': 'high angle elevated camera',
+      '低处': 'low angle ground camera',
+    },
+  },
   sceneType: {
     label: '场景类型',
     tags: {
@@ -283,6 +306,36 @@ const SCENE_TAG_CATEGORIES = {
       '雾天': 'foggy misty fog',
       '大风': 'windy strong wind',
       '暴风雨': 'storm thunder lightning',
+    },
+  },
+  shotSize: {
+    label: '镜头景别',
+    tags: {
+      '大全景': 'establishing shot wide establishing',
+      '远景': 'long shot distant view',
+      '极远景': 'extreme long shot very distant view',
+      '全景': 'full shot complete view',
+      '中景': 'medium shot waist up',
+      '近景': 'close-up shot detailed',
+      '特写': 'extreme close-up detail',
+    },
+  },
+  panorama360Size: {
+    label: '360空间大小',
+    tags: {
+      '360小景': '360 panorama VR small room immersive',
+      '360中景': '360 panorama VR medium space indoor outdoor',
+      '360大景': '360 panorama VR wide angle large space full spherical',
+      '360极景': '360 panorama VR extreme wide view cityscape landscape vista',
+    },
+  },
+  panorama360Angle: {
+    label: '360摄像机视角',
+    tags: {
+      '360平视': '360 panorama eye level view horizontal',
+      '360俯瞰': '360 panorama bird eye view top down aerial',
+      '360仰视': '360 panorama looking up upward angle',
+      '360俯视': '360 panorama looking down elevated view',
     },
   },
   lighting: {
@@ -338,6 +391,8 @@ export function AssetGeneratorModal({
   setLocalError,
   characterGender,
   assetType,
+  existingAssets = [],
+  onExistingAssetSelected,
 }: AssetGeneratorModalProps) {
   const [error, setError] = useState<string | null>(null);
 
@@ -378,35 +433,31 @@ export function AssetGeneratorModal({
         </div>
 
         {/* Content */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1">
           {/* Left: All Categories and Tags */}
-          <div className="flex flex-1 flex-col overflow-hidden border-r">
-            <div className="flex-1 overflow-auto p-4">
-              <div className="flex flex-row gap-6">
-                {Object.entries(tagCategories).map(([categoryKey, category]) => (
-                  <div key={categoryKey} className="flex flex-col gap-2 w-[120px] shrink-0">
-                    <div className="text-sm font-medium text-primary">{category.label}</div>
-                    <div className="flex flex-col gap-1">
-                      {Object.entries(category.tags).map(([tagName, tagValue]) => {
-                        const isSelected = assetForm.prompt.includes(tagValue);
-                        return (
-                          <button
-                            key={tagName}
-                            onClick={() => appendToPrompt(tagValue)}
-                            className={`rounded-lg border px-3 py-1.5 text-sm text-left transition-colors flex items-center justify-between ${
-                              isSelected
-                                ? 'border-primary bg-primary/10 text-primary'
-                                : 'hover:border-primary/50 hover:bg-muted'
-                            }`}
-                          >
-                            <span>{tagName}</span>
-                            {isSelected && <X size={12} className="shrink-0" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+          <div className="flex flex-1 flex-col border-r">
+            <div className="flex-1 p-4" style={{ maxHeight: 'calc(90vh - 160px)', overflowY: 'auto' }}>
+              <div className="flex flex-col flex-wrap gap-2" style={{ height: 'calc(90vh - 200px)' }}>
+                {Object.entries(tagCategories).flatMap(([categoryKey, category]) => [
+                  <div key={`label-${categoryKey}`} className="text-sm font-bold text-orange-500 px-3 py-1.5">{category.label}</div>,
+                  ...Object.entries(category.tags).map(([tagName, tagValue]) => {
+                    const isSelected = assetForm.prompt.includes(tagValue);
+                    return (
+                      <button
+                        key={`${categoryKey}-${tagName}`}
+                        onClick={() => appendToPrompt(tagValue)}
+                        className={`rounded-lg border px-3 py-1.5 text-sm transition-colors flex items-center justify-between ${
+                          isSelected
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'hover:border-primary/50 hover:bg-muted'
+                        }`}
+                      >
+                        <span>{tagName}</span>
+                        {isSelected && <X size={12} className="shrink-0" />}
+                      </button>
+                    );
+                  })
+                ])}
               </div>
             </div>
           </div>
@@ -448,28 +499,59 @@ export function AssetGeneratorModal({
                   </button>
                 </div>
               ) : (
-                <label className="flex h-40 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed hover:bg-muted/40">
-                  <Upload size={22} className="mb-2 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">点击上传参考图</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = async (loadEvent) => {
-                        const base64 = loadEvent.target?.result as string;
-                        setReferenceImage(base64);
-                        if (onReferenceImageSelected) {
-                          await onReferenceImageSelected(base64);
-                        }
-                      };
-                      reader.readAsDataURL(file);
-                    }}
-                  />
-                </label>
+                <div className="space-y-2">
+                  {existingAssets.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {existingAssets.map((asset) => (
+                        <button
+                          key={asset.id}
+                          onClick={() => {
+                            setReferenceImage(asset.url);
+                            if (onExistingAssetSelected) {
+                              onExistingAssetSelected(asset);
+                            } else if (onReferenceImageSelected) {
+                              // 如果没有专门的 handler，尝试用 base64
+                              fetch(asset.url)
+                                .then(res => res.blob())
+                                .then(blob => {
+                                  const reader = new FileReader();
+                                  reader.onload = (e) => {
+                                    onReferenceImageSelected?.(e.target?.result as string);
+                                  };
+                                  reader.readAsDataURL(blob);
+                                });
+                            }
+                          }}
+                          className="shrink-0 rounded-lg border-2 border-dashed p-1 hover:border-primary"
+                        >
+                          <img src={asset.url} alt={asset.name} className="h-16 w-16 rounded object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <label className="flex h-24 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed hover:bg-muted/40">
+                    <Upload size={18} className="mb-1 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">上传参考图</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = async (loadEvent) => {
+                          const base64 = loadEvent.target?.result as string;
+                          setReferenceImage(base64);
+                          if (onReferenceImageSelected) {
+                            await onReferenceImageSelected(base64);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+                </div>
               )}
             </div>
           </div>

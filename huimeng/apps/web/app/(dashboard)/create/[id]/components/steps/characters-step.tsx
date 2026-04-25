@@ -135,7 +135,6 @@ export function CharactersStep() {
       if (!mapping) return;
 
       if (data.status === 'completed' && data.outputResult?.assets) {
-        const assets = data.outputResult.assets as string[];
         // Update the specific character asset
         const nextCharacters = [...charactersResult];
         const char = nextCharacters[mapping.characterIndex];
@@ -143,7 +142,8 @@ export function CharactersStep() {
           // Replace placeholder with first real asset URL
           char.assets[mapping.assetIndex] = {
             ...char.assets[mapping.assetIndex],
-            url: assets[0] || '/placeholder.png', // TODO: 保持 /placeholder.png 会触发 loading 动画
+            url: assets[0] || '/placeholder.png',
+            comfyAssetId: comfyAssetIds[0] || '',
           };
           void persistCharacters(nextCharacters);
         }
@@ -537,7 +537,21 @@ export function CharactersStep() {
                   <span className="text-sm font-medium">角色资产</span>
                   <button
                     onClick={() => {
-                      setAssetForm(createEmptyAssetForm());
+                      const char = selectedCharacter;
+                      const charInfo = [
+                        char.name && `角色名: ${char.name}`,
+                        char.gender && `性别: ${char.gender}`,
+                        char.bodyType && `体型: ${char.bodyType}`,
+                        char.hairstyle && `发型: ${char.hairstyle}`,
+                        char.clothing && `服装: ${char.clothing}`,
+                        char.equipment && `装备: ${char.equipment}`,
+                        char.appearance && `外貌: ${char.appearance}`,
+                        char.personality && `性格: ${char.personality}`,
+                      ].filter(Boolean).join(', ');
+                      setAssetForm({
+                        ...createEmptyAssetForm(),
+                        prompt: charInfo,
+                      });
                       setReferenceImage(null);
                       setShowAssetForm(true);
                     }}
@@ -910,6 +924,17 @@ export function CharactersStep() {
         }}
         generatingAsset={false}
         characterGender={characterForm.gender}
+        existingAssets={charactersResult.flatMap((c, ci) =>
+          (c.assets || []).map((a: any, ai: number) => ({
+            id: a.id || `char-${ci}-${ai}`,
+            url: a.url,
+            name: `${c.name || `角色${ci + 1}`}资产${ai + 1}`,
+            comfyAssetId: a.comfyAssetId,
+          }))
+        )}
+        onExistingAssetSelected={(asset) => {
+          referenceAssetIdRef.current = (asset as any).comfyAssetId || undefined;
+        }}
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
@@ -925,35 +950,6 @@ export function CharactersStep() {
           const token =
             typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
 
-          // Get character basic info
-          const character = charactersResult[selectedCharacterIndex];
-          const characterInfo = {
-            name: character.name || '',
-            gender: character.gender || '',
-            appearance: character.appearance || '',
-            bodyType: character.bodyType || '',
-            hairstyle: character.hairstyle || '',
-            clothing: character.clothing || '',
-            equipment: character.equipment || '',
-            voiceType: character.voiceType || '',
-            personality: character.personality || '',
-          };
-
-          // Build full prompt with character info
-          const characterPrompt = [
-            characterInfo.name && `角色名: ${characterInfo.name}`,
-            characterInfo.gender && `性别: ${characterInfo.gender}`,
-            characterInfo.bodyType && `体型: ${characterInfo.bodyType}`,
-            characterInfo.hairstyle && `发型: ${characterInfo.hairstyle}`,
-            characterInfo.clothing && `服饰: ${characterInfo.clothing}`,
-            characterInfo.equipment && `装备: ${characterInfo.equipment}`,
-            characterInfo.appearance && `外观: ${characterInfo.appearance}`,
-            characterInfo.personality && `性格: ${characterInfo.personality}`,
-            characterInfo.voiceType && `配音: ${characterInfo.voiceType}`,
-          ].filter(Boolean).join(', ');
-
-          const fullPrompt = `${characterPrompt}${assetForm.prompt ? ', ' + assetForm.prompt : ''}`;
-
           // 1. Add pending asset with placeholder — don't block on generation
           const nextCharacters = [...charactersResult];
           const nextAssets = nextCharacters[selectedCharacterIndex].assets || [];
@@ -962,7 +958,7 @@ export function CharactersStep() {
             id: `asset-${Date.now()}`,
             type: assetForm.type,
             url: '/placeholder.png', // will be replaced via WebSocket
-            prompt: fullPrompt,
+            prompt: assetForm.prompt,
             tags: [],
             angle: assetForm.angle,
             shotSize: assetForm.shotSize,
@@ -989,8 +985,8 @@ export function CharactersStep() {
               },
               body: JSON.stringify({
                 projectId,
-                taskType: referenceImage || referenceAssetIdRef.current ? 'createRolePicture-i2i' : 'createRolePicture-t2i',
-                prompt: fullPrompt,
+                taskType: 'createRolePicture-i2i',
+                prompt: assetForm.prompt,
                 requestContext: {
                   'imageId-1': referenceAssetIdRef.current,
                 }

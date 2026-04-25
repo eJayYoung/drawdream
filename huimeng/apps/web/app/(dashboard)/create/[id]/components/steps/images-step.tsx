@@ -627,7 +627,7 @@ export function ImagesStep() {
   };
 
   const handleTimelineClick = async (
-    event: React.MouseEvent<HTMLButtonElement>,
+    event: React.MouseEvent<HTMLElement>,
   ) => {
     if (!selectedStoryboard) return;
 
@@ -1404,10 +1404,16 @@ export function ImagesStep() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={(event) => void handleTimelineClick(event)}
-                    className="relative block h-24 w-full rounded-xl border border-dashed bg-muted/20 px-3 text-left"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        void handleTimelineClick(event as unknown as React.MouseEvent<HTMLElement>);
+                      }
+                    }}
+                    className="relative block h-24 w-full rounded-xl border border-dashed bg-muted/20 px-3 text-left cursor-pointer"
                   >
                     <div className="absolute left-3 right-3 top-1/2 h-1 -translate-y-1/2 bg-primary/60 shadow-[0_0_8px_hsl(217.2_85%_35%_/_0.5)]" />
 
@@ -1472,7 +1478,7 @@ export function ImagesStep() {
                         </div>
                       );
                     })}
-                  </button>
+                  </div>
                 </div>
 
                 <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">

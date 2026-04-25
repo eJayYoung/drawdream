@@ -8,7 +8,7 @@ import { OssService } from './oss.service';
 
 @Module({
   imports: [MulterModule.register({
-    limits: { fileSize: 10 * 1024 * 1024 },
+    limits: { fileSize: 50 * 1024 * 1024 },
   })],
   providers: [LlmService, ComfyUIService, WorkflowTemplateService, RedisService, OssService],
   exports: [LlmService, ComfyUIService, WorkflowTemplateService, RedisService, OssService],

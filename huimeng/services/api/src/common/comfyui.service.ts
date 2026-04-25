@@ -249,5 +249,4 @@ export class ComfyUIService {
       return { status: 'unknown', error: error.message };
     }
   }
-
-  }
+}

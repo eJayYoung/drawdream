@@ -377,4 +377,41 @@ ${content}
     const response = await this.chat(prompt, systemPrompt);
     return response;
   }
+
+  async enrichSceneDescription(
+    description: string,
+    location?: string,
+    timeOfDay?: string,
+    weather?: string,
+  ): Promise<string> {
+    const systemPrompt = `你是一个专业的AI绘图提示词优化专家，擅长将简短的场景描述丰富成详细、专业的AI绘图提示词。请始终用中文返回结果。`;
+
+    const contextParts = [];
+    if (location) contextParts.push(`地点：${location}`);
+    if (timeOfDay) contextParts.push(`时间：${timeOfDay}`);
+    if (weather) contextParts.push(`天气：${weather}`);
+    const context = contextParts.length > 0 ? `\n场景上下文：\n${contextParts.join('\n')}` : '';
+
+    const prompt = `请将以下场景描述丰富成详细的AI绘图提示词。这个提示词是给AI文生图模型用的，请用模型能理解的视觉描述语言。
+
+【原始描述】
+${description}
+${context}
+
+丰富要求：
+1. 保留原描述的核心内容和氛围
+2. 用AI绘图模型能理解的视觉描述词汇（如：暖色调、冷色调、柔和光线、强烈阴影、景深、虚化等）
+3. 添加符合场景的物品细节、材质描述（如：木质桌面、丝绸窗帘、金属质感、玻璃反射、纹理细节）
+4. 添加光影效果和色彩氛围描述
+5. 添加环境细节（如：灰尘颗粒、雾气、光束、水面倒影、阴影层次）
+6. 确保描述符合给定的时间、天气、场地等上下文
+7. 只描述场景和环境，不要添加任何人物描述（如人物的外貌、表情、动作、服装等）
+8. 只返回丰富后的提示词，不要添加解释说明
+9. 必须用中文输出所有内容
+
+请直接返回丰富后的提示词。`;
+
+    const response = await this.chat(prompt, systemPrompt);
+    return response;
+  }
 }

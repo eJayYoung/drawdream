@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import axios from 'axios';
 
 @Injectable()
 export class OssService {
@@ -43,6 +44,33 @@ export class OssService {
     } catch (error: any) {
       this.logger.error(`OBS upload failed: ${error.message}`);
       throw error;
+    }
+  }
+
+  async proxyImage(imageUrl: string): Promise<{ base64: string; contentType: string }> {
+    try {
+      this.logger.log(`[OssService] proxyImage: fetching ${imageUrl}`);
+
+      const response = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
+
+      const contentType = (response.headers['content-type'] as string) || 'image/jpeg';
+      const base64 = Buffer.from(response.data, 'binary').toString('base64');
+
+      this.logger.log(`[OssService] proxyImage: success, size=${response.data.length}, type=${contentType}`);
+
+      return {
+        base64: `data:${contentType};base64,${base64}`,
+        contentType,
+      };
+    } catch (error: any) {
+      this.logger.error(`[OssService] proxyImage failed: ${error.message}`);
+      throw new BadRequestException(`图片获取失败: ${error.message}`);
     }
   }
 }
