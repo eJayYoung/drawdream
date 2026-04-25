@@ -27,7 +27,7 @@ export default function HomePage() {
       </header>
 
       {/* Hero */}
-      <section className="flex-1 flex items-center justify-center py-20 bg-gradient-to-b from-indigo-50 to-white">
+      <section className="flex-1 flex items-center justify-center py-20 bg-gradient-to-b from-indigo-950/50 to-background">
         <div className="container mx-auto px-4 text-center">
           <h1 className="text-5xl font-bold mb-6 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
             绘梦 · AI短剧生成平台
@@ -55,7 +55,7 @@ export default function HomePage() {
       </section>
 
       {/* Features */}
-      <section className="py-20 bg-white">
+      <section className="py-20 bg-card">
         <div className="container mx-auto px-4">
           <h2 className="text-3xl font-bold text-center mb-12">创作流程</h2>
           <div className="grid md:grid-cols-3 lg:grid-cols-6 gap-6">
