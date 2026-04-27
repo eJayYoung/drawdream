@@ -22,6 +22,8 @@ export interface MaterialWithNames {
   mimeType?: string;
   metadata?: any;
   projectId?: string;
+  workflowType?: string;
+  workflowId?: string;
   createdAt: Date;
   updatedAt: Date;
   projectName?: string;
@@ -43,6 +45,27 @@ export class MaterialsService {
       id: uuidv4(),
       userId,
       ...dto,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const em = this.materialRepo.getEntityManager();
+    await em.persist(material);
+    await em.flush();
+    return material;
+  }
+
+  async createWithWorkflow(
+    userId: string,
+    dto: CreateMaterialLibraryDto,
+    workflowType: string,
+    workflowId: string,
+  ): Promise<MaterialLibrary> {
+    const material = this.materialRepo.create({
+      id: uuidv4(),
+      userId,
+      ...dto,
+      workflowType: workflowType as any,
+      workflowId,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -238,5 +261,44 @@ export class MaterialsService {
     await em.persist(materials);
     await em.flush();
     return materials;
+  }
+
+  async batchCreateWithWorkflow(
+    userId: string,
+    items: CreateMaterialLibraryDto[],
+    workflowType: string,
+    workflowId: string,
+  ): Promise<MaterialLibrary[]> {
+    const materials = items.map((dto) => {
+      const material = this.materialRepo.create({
+        id: uuidv4(),
+        userId,
+        assetId: dto.assetId,
+        originFileName: dto.originFileName,
+        url: dto.url,
+        fileType: dto.fileType,
+        source: dto.source,
+        size: dto.size,
+        width: dto.width,
+        height: dto.height,
+        duration: dto.duration,
+        mimeType: dto.mimeType,
+        metadata: dto.metadata || null,
+        projectId: dto.projectId,
+        workflowType: workflowType as any,
+        workflowId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      return material;
+    });
+    const em = this.materialRepo.getEntityManager();
+    await em.persist(materials);
+    await em.flush();
+    return materials;
+  }
+
+  async findByWorkflow(workflowType: string, workflowId: string): Promise<MaterialLibrary[]> {
+    return this.materialRepo.find({ workflowType: workflowType as any, workflowId });
   }
 }

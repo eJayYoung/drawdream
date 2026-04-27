@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
+    "predev": "node ../../scripts/kill-port.js 8778",
     "build": "nest build",
     "start": "nest start",
     "lint": "eslint \"{src,test}/**/*.ts\"",

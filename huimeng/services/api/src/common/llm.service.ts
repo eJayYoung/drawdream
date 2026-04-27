@@ -175,44 +175,62 @@ ${scriptContent}
   }
 
   async generateScenes(scriptContent: string): Promise<any[]> {
-    const systemPrompt = `你是专业的影视场景设计师，擅长根据剧本提取和设计场景环境。请始终用中文返回结果。`;
+    const systemPrompt = `你是专业的影视场景设计师，擅长根据剧本提取纯地点，并为每个地点生成极其详细、符合特定场所的真实场景描述。请始终用中文返回结果。`;
 
-    const prompt = `请根据以下剧本内容，提取并生成所有场景的信息。
+    const prompt = `请根据以下剧本内容，提取故事中涉及的所有【纯地点/场所】，并为每个地点生成极其详细、真实的环境描述。
 
 剧本内容：
 ${scriptContent}
 
-请为每个场景生成：
-1. 场景名称
-2. 场景描述（环境、氛围）
-3. 时间（白天/傍晚/夜晚）
-4. 天气（晴朗/阴天/雨天等）
-5. 场景类型（室内/室外）
-6. 关键道具或元素
+【任务】
+1. 提取所有纯地点名称
+2. 根据地点名称，生成极其详细、真实的环境描述
 
-请以JSON格式返回：
+【地点名称的内涵】
+- 地点名称本身就是最重要的线索！AI需要从名称推断这是什么地方
+- 从名称推断这个场所的建筑类型、典型物品、光线氛围
+- "道观内" → 道教徒修炼场所 → 三清像、香案、蒲团、烛台、经书、道教装饰
+- "丛林深处" → 野外森林 → 密林、苔藓、树根、落叶、蜘蛛网
+- "宫殿" → 帝王场所 → 华丽装饰、雕梁画栋、琉璃瓦、宫女痕迹
+- AI需要像考古学家一样，从名称推断这个地方应该有什么
+
+【描述（description）生成规则】
+- 必须根据地点名称的内涵生成，不能从剧本复制
+- 纯静态环境描写，禁止任何人物
+- 描述要极其详细具体：至少60字，越详细越好
+- 必须包含：光线氛围、具体物品的细节、质感、色彩、空间感
+
+【禁止词汇】
+绝对禁止出现在description中：人、人物、角色、众人、两人、三人、五人、敌人、朋友、对峙、打斗、交谈、说话、坐着、站着、休息、准备、发现、对话、活动、动作、行走、奔跑
+
+请按以下JSON格式返回：
 {
   "scenes": [
     {
-      "name": "场景名称",
-      "description": "场景描述",
+      "location": "道观外（室外）",
+      "description": "（极其详细的环境描写，至少60字，要符合道观这一特定场所的真实特征）",
       "timeOfDay": "白天/傍晚/夜晚",
-      "weather": "天气",
-      "type": "室内/室外",
-      "elements": ["关键道具1", "关键道具2"]
+      "weather": "晴朗/阴天/雨天",
+      "elements": ["古树","石阶","枯藤","落叶"]
     }
   ]
 }
 
-请直接返回JSON，不要有其他内容。必须用中文输出所有内容。`;
+【重要】location字段格式：地点（室内/室外），如"道观外（室外）"、"道观内（室内）"，括号内必须写"室内"或"室外"！
+
+请直接返回JSON，只返回JSON，不要有任何其他内容。`;
 
     const response = await this.chat(prompt, systemPrompt);
     const content = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
+    this.logger.log(`[LLM] generateScenes raw response: ${content.substring(0, 500)}...`);
+
     try {
       const parsed = JSON.parse(content);
+      this.logger.log(`[LLM] parsed.scenes length: ${parsed.scenes?.length}, first scene keys: ${Object.keys(parsed.scenes?.[0] || {}).join(', ')}`);
       return parsed.scenes || [];
-    } catch {
+    } catch (e) {
+      this.logger.error(`[LLM] generateScenes parse error: ${e}, content: ${content.substring(0, 200)}`);
       return [];
     }
   }

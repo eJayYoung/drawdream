@@ -1,7 +1,4 @@
-import { Entity, PrimaryKey, Property, OneToMany } from '@mikro-orm/decorators/legacy';
-import { Collection } from '@mikro-orm/core';
-import { Episode } from './episode.entity';
-import { Character } from './character.entity';
+import { Entity, PrimaryKey, Property } from '@mikro-orm/decorators/legacy';
 
 @Entity()
 export class Project {
@@ -35,41 +32,11 @@ export class Project {
   @Property({ type: 'string', default: 'draft' })
   status: string;
 
-  @Property({ type: 'json', nullable: true })
-  scriptsData: any[];
-
-  @Property({ type: 'text', nullable: true })
-  scriptContent: string;
-
-  @Property({ type: 'json', nullable: true })
-  episodesData: any[];
-
-  @Property({ type: 'json', nullable: true })
-  charactersData: any[];
-
-  @Property({ type: 'json', nullable: true })
-  scenesData: any[];
-
-  @Property({ type: 'json', nullable: true })
-  storyboardsData: any[];
-
-  @Property({ type: 'json', nullable: true })
-  imagesData: any[];
-
-  @Property({ type: 'string', nullable: true })
-  videoUrl?: string;
-
   @Property({ type: 'string', nullable: true })
   coverImageUrl?: string;
 
-  @Property({ type: 'number', nullable: true })
-  selectedScriptIndex?: number;
-
-  @OneToMany(() => Episode, (episode: Episode) => episode.project)
-  episodes = new Collection<Episode>(this);
-
-  @OneToMany(() => Character, (character: Character) => character.project)
-  characters = new Collection<Character>(this);
+  @Property({ type: 'string', nullable: true })
+  selectedScriptId?: string;
 
   @Property({ type: 'date' })
   createdAt: Date = new Date();

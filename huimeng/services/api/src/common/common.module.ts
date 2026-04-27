@@ -5,11 +5,13 @@ import { ComfyUIService } from './comfyui.service';
 import { WorkflowTemplateService } from './workflow-template.service';
 import { RedisService } from './redis.service';
 import { OssService } from './oss.service';
+import { ProxyController } from './proxy.controller';
 
 @Module({
   imports: [MulterModule.register({
     limits: { fileSize: 50 * 1024 * 1024 },
   })],
+  controllers: [ProxyController],
   providers: [LlmService, ComfyUIService, WorkflowTemplateService, RedisService, OssService],
   exports: [LlmService, ComfyUIService, WorkflowTemplateService, RedisService, OssService],
 })

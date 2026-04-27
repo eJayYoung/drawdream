@@ -104,6 +104,16 @@ export class GenerationController {
     return result;
   }
 
+  @Get('tasks/:taskId')
+  @ApiOperation({ summary: '获取任务状态' })
+  async getTask(@Param('taskId') taskId: string, @Query('taskType') taskType: string) {
+    const result = await this.generationService.getTaskStatus(taskId, taskType);
+    if (!result) {
+      return { status: 'not_found', taskId };
+    }
+    return result;
+  }
+
   @Post('workflow')
   @ApiOperation({ summary: '创建工作流' })
   async createWorkflow(
@@ -119,7 +129,7 @@ export class GenerationController {
       inParam: string; // JSON.stringify({ prompt, resolution?, image? })
       episodeId?: string;
       storyboardId?: string;
-      referenceAssetId?: string;
+      referenceAssetIds?: string[];
       referenceAssetContent?: string;
       requestContext?: Record<string, any>;
     },
@@ -135,10 +145,85 @@ export class GenerationController {
       inParam: body.inParam,
       episodeId: body.episodeId,
       storyboardId: body.storyboardId,
-      referenceAssetId: body.referenceAssetId,
+      referenceAssetIds: body.referenceAssetIds,
       referenceAssetContent: body.referenceAssetContent,
       requestContext: body.requestContext,
     });
+    return { taskId: result.taskId, status: result.status };
+  }
+
+  @Post('screenshot/upload')
+  @ApiOperation({ summary: '上传全景截图到ComfyUI和OSS' })
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadScreenshot(
+    @UploadedFile() file: MulterFile,
+    @Request() req: any,
+    @Query('projectId') projectId?: string,
+    @Query('sceneId') sceneId?: string,
+  ) {
+    const [ossUrl, result] = await Promise.all([
+      this.ossService.uploadBuffer(file.buffer, file.originalname, file.mimetype),
+      this.comfyUIService.uploadAsset(file.buffer, file.originalname),
+    ]);
+    const data = result?.data || {};
+
+    // 保存到素材库
+    await this.materialsService.create(req.user.id, {
+      assetId: data.id?.toString() || '',
+      originFileName: data.assetName || file.originalname,
+      url: ossUrl,
+      fileType: 'image',
+      source: 'upload',
+      size: file.size,
+      mimeType: file.mimetype,
+      projectId,
+      metadata: { sceneId },
+    });
+
+    return {
+      id: data.id,
+      url: ossUrl,
+      assetUrl: ossUrl,
+      filename: data.assetName || file.originalname,
+    };
+  }
+
+  @Post('smart-storyboard')
+  @ApiOperation({ summary: '智能分镜 - 使用资产引用生成图片' })
+  async smartStoryboard(
+    @Request() req: any,
+    @Body()
+    body: {
+      projectId: string;
+      prompt: string;
+      assetIds: string[];
+      inParam?: string;
+      episodeId?: string;
+      storyboardId?: string;
+    },
+  ) {
+    const { projectId, prompt, assetIds, inParam: inParamStr, episodeId, storyboardId } = body;
+
+    const requestContext: Record<string, string> = {};
+    assetIds.forEach((assetId, index) => {
+      requestContext[`imageId-${index + 1}`] = assetId;
+    });
+
+    const finalInParamStr = inParamStr || JSON.stringify(
+      Object.fromEntries(assetIds.map((_, index) => [`imageId-${index + 1}`, ''])),
+    );
+
+    const result = await this.generationService.submitSmartStoryboard({
+      userId: req.user.id,
+      projectId,
+      taskType: '分镜图生成',
+      prompt,
+      inParam: finalInParamStr,
+      requestContext,
+      episodeId,
+      storyboardId,
+    });
+
     return { taskId: result.taskId, status: result.status };
   }
 }

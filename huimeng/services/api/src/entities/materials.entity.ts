@@ -2,6 +2,7 @@ import { Entity, PrimaryKey, Property, Index } from '@mikro-orm/decorators/legac
 
 export type MaterialType = 'image' | 'video' | 'audio';
 export type MaterialSource = 'upload' | 'workflow';
+export type WorkflowType = 'script' | 'character' | 'scene' | 'storyboard' | 'keyframe' | 'video';
 
 @Entity()
 @Index({ name: 'idx_materials_user_id', properties: ['userId'] })
@@ -49,6 +50,12 @@ export class MaterialLibrary {
 
   @Property({ type: 'string', nullable: true })
   projectId?: string;
+
+  @Property({ type: 'string', nullable: true })
+  workflowType?: WorkflowType;
+
+  @Property({ type: 'string', nullable: true })
+  workflowId?: string;
 
   @Property({ type: 'date' })
   createdAt: Date = new Date();

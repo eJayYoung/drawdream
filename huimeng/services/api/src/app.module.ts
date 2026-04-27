@@ -10,7 +10,22 @@ import { GenerationModule } from './generation/generation.module';
 import { MediaModule } from './media/media.module';
 import { CommonModule } from './common/common.module';
 import { MaterialsModule } from './materials/materials.module';
-import { Project, Episode, Character, MaterialLibrary } from './entities';
+import { ScriptsModule } from './scripts/scripts.module';
+import { CharactersModule } from './characters/characters.module';
+import { ScenesModule } from './scenes/scenes.module';
+import { StoryboardsModule } from './storyboards/storyboards.module';
+import { VideoTimelinesModule } from './video-timelines/video-timelines.module';
+import { VideosModule } from './videos/videos.module';
+import {
+  Project,
+  MaterialLibrary,
+  Script,
+  Character,
+  Scene,
+  Storyboard,
+  VideoTimeline,
+  Video,
+} from './entities';
 import { LoggingInterceptor } from './common/logging.interceptor';
 
 @Module({
@@ -22,7 +37,16 @@ import { LoggingInterceptor } from './common/logging.interceptor';
     MikroOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        entities: [Project, Episode, Character, MaterialLibrary],
+        entities: [
+          Project,
+          MaterialLibrary,
+          Script,
+          Character,
+          Scene,
+          Storyboard,
+          VideoTimeline,
+          Video,
+        ],
         dbName: configService.get('POSTGRES_DB') || 'huimeng',
         host: configService.get('POSTGRES_HOST') || 'localhost',
         port: parseInt(configService.get('POSTGRES_PORT') || '5432'),
@@ -42,6 +66,12 @@ import { LoggingInterceptor } from './common/logging.interceptor';
     GenerationModule,
     MediaModule,
     MaterialsModule,
+    ScriptsModule,
+    CharactersModule,
+    ScenesModule,
+    StoryboardsModule,
+    VideoTimelinesModule,
+    VideosModule,
   ],
   providers: [LoggingInterceptor],
 })

@@ -1,8 +1,26 @@
 import { defineConfig } from '@mikro-orm/postgresql';
-import { Project, Episode, Character } from './src/entities';
+import {
+  Project,
+  MaterialLibrary,
+  Script,
+  Character,
+  Scene,
+  Storyboard,
+  VideoTimeline,
+  Video,
+} from './src/entities';
 
 export default defineConfig({
-  entities: [Project, Episode, Character],
+  entities: [
+    Project,
+    MaterialLibrary,
+    Script,
+    Character,
+    Scene,
+    Storyboard,
+    VideoTimeline,
+    Video,
+  ],
   dbName: process.env.POSTGRES_DB || 'huimeng',
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432'),
