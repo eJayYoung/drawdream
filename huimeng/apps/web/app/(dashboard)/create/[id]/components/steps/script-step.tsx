@@ -175,20 +175,24 @@ export function ScriptStep() {
 
   const handleAddScript = async () => {
     const newScript = {
-      id: `script-${Date.now()}`,
+      id: crypto.randomUUID(),
+      isNew: true,
       title: `剧本 ${scripts.length + 1}`,
       content: '',
       createdAt: new Date().toISOString(),
     };
+    const newIndex = scripts.length;
     const nextScripts = [...scripts, newScript];
     setScripts(nextScripts);
-    setSelectedScriptIndexInternal(scripts.length);
+    setSelectedScriptIndexInternal(newIndex);
+    setSelectedScriptIndex(newIndex);
     setScriptContent('');
-    await saveScriptsToBackend(nextScripts, selectedScriptIndex);
+    await saveScriptsToBackend(nextScripts, newIndex);
   };
 
   const handleSelectScript = (index: number) => {
     setSelectedScriptIndexInternal(index);
+    setSelectedScriptIndex(index);
     const script = scripts[index];
     if (script) {
       setScriptContent(script.content || '');

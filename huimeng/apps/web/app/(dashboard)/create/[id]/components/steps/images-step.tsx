@@ -378,7 +378,11 @@ export function ImagesStep() {
         const newPrompt = before + '@' + charAsset.characterName + ' ';
         setGeneratorPrompt(newPrompt);
         // Store the character mention with image URL
-        setCharacterMentions(prev => [...prev, { displayText: `@${charAsset.characterName}`, imageUrl: charAsset.imageUrl }]);
+        setCharacterMentions(prev => {
+          const exists = prev.some(m => m.imageUrl === charAsset.imageUrl);
+          if (exists) return prev;
+          return [...prev, { displayText: `@${charAsset.characterName}`, imageUrl: charAsset.imageUrl }];
+        });
       }
     }
     setShowCharacterDropdown(false);
@@ -527,6 +531,48 @@ export function ImagesStep() {
     return items;
   };
 
+  // Auto-create first keyframe point using smart storyboard image as the first frame
+  useEffect(() => {
+    if (!selectedStoryboard || keyframePoints.length > 0) return;
+
+    const storyboardImageUrl = selectedStoryboard.imageUrl;
+    if (!storyboardImageUrl) return;
+
+    const now = new Date().toISOString();
+    const firstPoint: KeyframePoint = {
+      type: "keyframe_point",
+      id: `keyframe-point-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      storyboardId: selectedStoryboard.id,
+      storyboardTitle: selectedStoryboard.title,
+      label: "第 1 帧",
+      timeSeconds: 0,
+      frameNumber: 1,
+      fps: effectiveFps,
+      prompt: "",
+      notes: "",
+      generateCount: 1,
+      selectedVariantId: "storyboard-first-frame",
+      variants: [
+        {
+          id: "storyboard-first-frame",
+          title: "智能分镜首帧",
+          imageUrl: storyboardImageUrl,
+          status: "completed",
+          taskId: "",
+          prompt: "",
+          error: "",
+          createdAt: now,
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    void syncKeyframePoints([firstPoint], true);
+    setSelectedPointId(firstPoint.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStoryboard?.id, keyframePoints.length]);
+
   const waitForTaskCompletion = async (taskId: string, token: string) => {
     for (let attempt = 0; attempt < 90; attempt += 1) {
       const response = await fetch(
@@ -566,37 +612,11 @@ export function ImagesStep() {
     referenceImages: string[];
     filenamePrefix: string;
   }) => {
-    const taskType =
-      referenceImages.length > 1
-        ? "multi_ref_image"
-        : referenceImages.length === 1
-          ? "scene_image_ref"
-          : project?.aspectRatio === "9:16"
-            ? "scene_image_portrait"
-            : "scene_image_landscape";
+    // taskType 用于资产绑定
+    const taskType = "关键帧生成";
+    // api 由后端根据 referenceAssetIds 数量决定
 
-    const inputParams: Record<string, unknown> =
-      taskType === "multi_ref_image"
-        ? {
-            reference_images: referenceImages,
-            prompt,
-            negative_prompt: negativePrompt,
-            filename_prefix: filenamePrefix,
-          }
-        : taskType === "scene_image_ref"
-          ? {
-              reference_image: referenceImages[0],
-              prompt,
-              negative_prompt: negativePrompt,
-              filename_prefix: filenamePrefix,
-            }
-          : {
-              prompt,
-              negative_prompt: negativePrompt,
-              filename_prefix: filenamePrefix,
-            };
-
-    const queueResponse = await fetch(`${API_URL}/api/generation/queue`, {
+    const workflowResponse = await fetch(`${API_URL}/api/generation/workflow`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -605,15 +625,21 @@ export function ImagesStep() {
       body: JSON.stringify({
         projectId,
         taskType,
-        inputParams,
+        step: "keyframes",
+        prompt,
+        referenceAssetIds: referenceImages,
+        inParam: JSON.stringify({
+          negative_prompt: negativePrompt,
+          filename_prefix: filenamePrefix,
+        }),
       }),
     });
 
-    if (!queueResponse.ok) {
+    if (!workflowResponse.ok) {
       throw new Error("提交关键帧任务失败");
     }
 
-    const queuedTask = await queueResponse.json();
+    const queuedTask = await workflowResponse.json();
     const completedTask = await waitForTaskCompletion(queuedTask.taskId, token);
     const images = extractTaskImages(completedTask.outputResult);
     if (images.length === 0) {
@@ -811,44 +837,10 @@ export function ImagesStep() {
       const resolvedSuggestions = await Promise.all(
         baseSuggestions.map(async (suggestion, index) => {
           try {
-            const taskType =
-              baseReferenceImages.length > 1
-                ? "multi_ref_image"
-                : baseReferenceImages.length === 1
-                  ? "scene_image_ref"
-                  : project?.aspectRatio === "9:16"
-                    ? "scene_image_portrait"
-                    : "scene_image_landscape";
+            const taskType = "关键帧生成";
 
-            const inputParams: Record<string, unknown> =
-              taskType === "multi_ref_image"
-                ? {
-                    reference_images: baseReferenceImages,
-                    prompt: suggestion.prompt,
-                    negative_prompt:
-                      selectedStoryboard.negativePrompt ||
-                      DEFAULT_NEGATIVE_PROMPT,
-                    filename_prefix: `huimeng/ai-keyframe/${selectedStoryboard.id}/${suggestion.frameNumber}-${index}`,
-                  }
-                : taskType === "scene_image_ref"
-                  ? {
-                      reference_image: baseReferenceImages[0],
-                      prompt: suggestion.prompt,
-                      negative_prompt:
-                        selectedStoryboard.negativePrompt ||
-                        DEFAULT_NEGATIVE_PROMPT,
-                      filename_prefix: `huimeng/ai-keyframe/${selectedStoryboard.id}/${suggestion.frameNumber}-${index}`,
-                    }
-                  : {
-                      prompt: suggestion.prompt,
-                      negative_prompt:
-                        selectedStoryboard.negativePrompt ||
-                        DEFAULT_NEGATIVE_PROMPT,
-                      filename_prefix: `huimeng/ai-keyframe/${selectedStoryboard.id}/${suggestion.frameNumber}-${index}`,
-                    };
-
-            const queueResponse = await fetch(
-              `${API_URL}/api/generation/queue`,
+            const workflowResponse = await fetch(
+              `${API_URL}/api/generation/workflow`,
               {
                 method: "POST",
                 headers: {
@@ -858,16 +850,24 @@ export function ImagesStep() {
                 body: JSON.stringify({
                   projectId,
                   taskType,
-                  inputParams,
+                  step: "keyframes",
+                  prompt: suggestion.prompt,
+                  referenceAssetIds: baseReferenceImages,
+                  inParam: JSON.stringify({
+                    negative_prompt:
+                      selectedStoryboard.negativePrompt ||
+                      DEFAULT_NEGATIVE_PROMPT,
+                    filename_prefix: `huimeng/ai-keyframe/${selectedStoryboard.id}/${suggestion.frameNumber}-${index}`,
+                  }),
                 }),
               },
             );
 
-            if (!queueResponse.ok) {
+            if (!workflowResponse.ok) {
               throw new Error("AI关键帧建议生成失败");
             }
 
-            const queuedTask = await queueResponse.json();
+            const queuedTask = await workflowResponse.json();
             const completedTask = await waitForTaskCompletion(
               queuedTask.taskId,
               token,
@@ -1084,41 +1084,10 @@ export function ImagesStep() {
       );
       if (!currentPoint) return;
 
-      const taskType =
-        baseReferenceImages.length > 1
-          ? "multi_ref_image"
-          : baseReferenceImages.length === 1
-            ? "scene_image_ref"
-            : project?.aspectRatio === "9:16"
-              ? "scene_image_portrait"
-              : "scene_image_landscape";
-
-      const inputParams: Record<string, unknown> =
-        taskType === "multi_ref_image"
-          ? {
-              reference_images: baseReferenceImages,
-              prompt: generatedPrompt,
-              negative_prompt:
-                selectedStoryboard.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
-              filename_prefix: `huimeng/keyframe/${selectedStoryboard.id}/${activePoint.id}-${variantId}`,
-            }
-          : taskType === "scene_image_ref"
-            ? {
-                reference_image: baseReferenceImages[0],
-                prompt: generatedPrompt,
-                negative_prompt:
-                  selectedStoryboard.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
-                filename_prefix: `huimeng/keyframe/${selectedStoryboard.id}/${activePoint.id}-${variantId}`,
-              }
-            : {
-                prompt: generatedPrompt,
-                negative_prompt:
-                  selectedStoryboard.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
-                filename_prefix: `huimeng/keyframe/${selectedStoryboard.id}/${activePoint.id}-${variantId}`,
-              };
+      const taskType = "关键帧生成";
 
       try {
-        const queueResponse = await fetch(`${API_URL}/api/generation/queue`, {
+        const workflowResponse = await fetch(`${API_URL}/api/generation/workflow`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1127,15 +1096,22 @@ export function ImagesStep() {
           body: JSON.stringify({
             projectId,
             taskType,
-            inputParams,
+            step: "keyframes",
+            prompt: generatedPrompt,
+            referenceAssetIds: baseReferenceImages,
+            inParam: JSON.stringify({
+              negative_prompt:
+                selectedStoryboard.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
+              filename_prefix: `huimeng/keyframe/${selectedStoryboard.id}/${activePoint.id}-${variantId}`,
+            }),
           }),
         });
 
-        if (!queueResponse.ok) {
+        if (!workflowResponse.ok) {
           throw new Error("提交关键帧任务失败");
         }
 
-        const queuedTask = await queueResponse.json();
+        const queuedTask = await workflowResponse.json();
         await syncKeyframePoints(
           getLatestKeyframePoints().map((point) =>
             point.id === activePoint.id

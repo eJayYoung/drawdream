@@ -5,6 +5,13 @@ import { Camera as LucideCamera, X, Plus, Trash2, Move } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+const getProxiedImageUrl = (url: string) => {
+  if (!url || url === '/placeholder.png') return url;
+  return `${API_URL}/api/proxy/image?url=${encodeURIComponent(url)}`;
+};
+
 interface HumanFigure {
   id: string;
   mesh: THREE.Group;
@@ -133,8 +140,9 @@ export function PanoramaViewer({ imageUrl, title = '360°全景图', onClose, on
     geometry.scale(-1, 1, 1);
 
     const textureLoader = new THREE.TextureLoader();
+    const proxiedUrl = getProxiedImageUrl(imageUrl);
     textureLoader.load(
-      imageUrl,
+      proxiedUrl,
       (texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
         const material = new THREE.MeshBasicMaterial({ map: texture });

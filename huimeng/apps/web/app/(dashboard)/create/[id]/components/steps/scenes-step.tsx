@@ -80,6 +80,7 @@ export function ScenesStep() {
   const [showScenePreview, setShowScenePreview] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [panoramaImage, setPanoramaImage] = useState<string | null>(null);
+  const [screenshotUploading, setScreenshotUploading] = useState(false);
 
   const pendingScenesRef = useRef<Map<string, { sceneIndex: number; assetIndex: number }>>(new Map());
 
@@ -112,22 +113,26 @@ export function ScenesStep() {
       const mapping = pending.get(data.taskId);
       if (!mapping) return;
 
-      if (data.status === 'completed' && data.outputResult?.assets) {
-        const assets = data.outputResult.assets as string[];
-        const nextScenes = [...scenesResult];
-        const scene = nextScenes[mapping.sceneIndex];
-        if (scene?.assets?.[mapping.assetIndex]) {
-          scene.assets[mapping.assetIndex] = {
-            ...scene.assets[mapping.assetIndex],
-            url: assets[0] || '/placeholder.png',
-          };
-          void persistScenes(nextScenes);
+      if (data.status === 'completed') {
+        // 直接从数据库获取最新场景数据更新前端状态
+        if (mapping.sceneIndex !== null && mapping.sceneIndex !== undefined) {
+          const sceneId = scenesResult[mapping.sceneIndex]?.id;
+          if (sceneId) {
+            const token = localStorage.getItem('accessToken');
+            fetch(`${API_URL}/api/scenes/${sceneId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+              .then((res) => res.json())
+              .then((updatedScene) => {
+                const nextScenes = [...scenesResult];
+                nextScenes[mapping.sceneIndex] = updatedScene;
+                setScenesResult(nextScenes);
+              })
+              .catch((e) => console.error('Failed to refresh scene:', e));
+          }
         }
         pending.delete(data.taskId);
       } else if (data.status === 'failed') {
-        const nextScenes = [...scenesResult];
-        nextScenes[mapping.sceneIndex].assets?.splice(mapping.assetIndex, 1);
-        void persistScenes(nextScenes);
         pending.delete(data.taskId);
         setError(data.error || '资产生成失败');
       }
@@ -148,6 +153,58 @@ export function ScenesStep() {
     setShowScenePreview(false);
     setAiGeneratedScenes([]);
     setSelectedSceneIndices([]);
+  };
+
+  const handlePanoramaScreenshot = async (blob: Blob) => {
+    if (!blob || !activeScene || !projectId || activeIndex === null) return;
+
+    console.log('[截图 blob 大小]', blob.size, 'bytes, type:', blob.type);
+    setScreenshotUploading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const formData = new FormData();
+      formData.append('file', blob, `panorama_${activeScene.id}_${Date.now()}.jpg`);
+      const res = await fetch(`${API_URL}/api/generation/screenshot/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || '截图上传失败');
+      }
+
+      const data = await res.json();
+      console.log('[截图上传成功]', data);
+
+      const assetUrl = data.url || data.assetUrl || data.filename;
+
+      const nextScenes = [...scenesResult];
+      const newAsset = {
+        id: `asset-${Date.now()}`,
+        type: 'image' as const,
+        url: assetUrl,
+        comfyAssetId: data.id,
+        prompt: `360全景截图 - ${activeScene.name || activeScene.location || '场景'}`,
+        createdAt: new Date().toISOString(),
+      };
+
+      if (!nextScenes[activeIndex].assets) {
+        nextScenes[activeIndex].assets = [];
+      }
+      nextScenes[activeIndex].assets.push(newAsset);
+      await persistScenes(nextScenes);
+
+      setPanoramaImage(null);
+    } catch (err: any) {
+      console.error('[截图上传失败]', err);
+      setError(err.message || '截图上传失败');
+    } finally {
+      setScreenshotUploading(false);
+    }
   };
 
   const handleSelectScene = (index: number) => {
@@ -187,6 +244,7 @@ export function ScenesStep() {
   const handleDeleteScene = async (index: number) => {
     if (!confirm('确定删除这个场景吗？')) return;
 
+    const sceneToDelete = scenesResult[index];
     const nextScenes = scenesResult.filter((_, i) => i !== index);
     let nextSelectedIndex = selectedSceneIndexInternal;
 
@@ -194,6 +252,19 @@ export function ScenesStep() {
       nextSelectedIndex = null;
     } else if (selectedSceneIndexInternal !== null && selectedSceneIndexInternal > index) {
       nextSelectedIndex = selectedSceneIndexInternal - 1;
+    }
+
+    // 先从数据库删除（如果有真实 id）
+    if (sceneToDelete?.id) {
+      try {
+        const token = typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
+        await fetch(`${API_URL}/api/scenes/${sceneToDelete.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (e) {
+        console.error('删除场景失败:', e);
+      }
     }
 
     setScenesResult(nextScenes);
@@ -220,7 +291,7 @@ export function ScenesStep() {
       });
     }
 
-    await saveScenesToBackend(nextScenes);
+    // 前端状态已更新，不需要再调用 saveScenesToBackend（upsert 不会删除记录）
   };
 
   const handleAddScene = async () => {
@@ -282,7 +353,14 @@ export function ScenesStep() {
           </div>
 
           <div className="flex-1 space-y-2 overflow-auto p-3">
-            {scenesResult.length === 0 ? (
+            {aiGeneratingScenes ? (
+              <div className="flex h-32 items-center justify-center">
+                <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                  <Loader2 size={32} className="animate-spin" />
+                  <span>AI 正在生成场景...</span>
+                </div>
+              </div>
+            ) : scenesResult.length === 0 ? (
               <div className="flex h-full items-center justify-center text-muted-foreground">
                 <div className="text-center">
                   <MapPin size={32} className="mx-auto mb-2 opacity-50" />
@@ -371,7 +449,7 @@ export function ScenesStep() {
                           type="text"
                           value={sceneForm.location}
                           onChange={(e) => setSceneForm((current) => ({ ...current, location: e.target.value }))}
-                          placeholder="室内/室外"
+                          placeholder="如：道观内、大树上"
                           className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
@@ -450,9 +528,17 @@ export function ScenesStep() {
                   <span className="text-sm font-medium">场景资产</span>
                   <button
                     onClick={() => {
+                      // 构建场景图 prompt：环境描述为核心，强调无人物、电影感、细节质感
+                      const desc = activeScene.description || '';
+                      const location = activeScene.location || '';
+                      const timeOfDay = activeScene.timeOfDay || '';
+                      const weather = activeScene.weather || '';
+                      const basePrompt = [location, timeOfDay, weather, desc].filter(Boolean).join('，');
+                      const enhancedPrompt = `${basePrompt}。电影感场景，画面精美，细节丰富，质感强烈，氛围营造到位，无任何人物出现，专注于环境、建筑、道具等视觉元素的细腻呈现。`;
+
                       setAssetForm({
                         ...createEmptyAssetForm(),
-                        prompt: `${activeScene.location || ''} ${activeScene.timeOfDay || ''} ${activeScene.weather || ''} ${activeScene.description || ''}`.trim(),
+                        prompt: enhancedPrompt,
                       });
                       setReferenceImage(activeScene.imageUrl || null);
                       setShowAssetForm(true);
@@ -481,16 +567,21 @@ export function ScenesStep() {
                                     alt={asset.prompt}
                                     className="max-h-full max-w-full object-contain"
                                   />
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPanoramaImage(asset.url);
+                                    }}
+                                    className="absolute right-2 top-2 z-10 rounded-lg bg-black/50 p-1.5 text-white hover:bg-black/70"
+                                    title="360° VR渲染"
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <circle cx="12" cy="12" r="10"/>
+                                      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+                                      <path d="M2 12h20"/>
+                                    </svg>
+                                  </button>
                                   <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 transition-colors group-hover:bg-black/30">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setPanoramaImage(asset.url);
-                                      }}
-                                      className="rounded-lg bg-black/50 p-2 text-white hover:bg-black/70"
-                                    >
-                                      <MapPin size={18} />
-                                    </button>
                                     <ZoomIn
                                       size={24}
                                       className="text-white opacity-0 transition-opacity group-hover:opacity-100"
@@ -516,7 +607,7 @@ export function ScenesStep() {
                                 ).filter((_: any, assetIndex: number) => assetIndex !== index);
                                 await persistScenes(nextScenes);
                               }}
-                              className="absolute right-2 top-2 rounded bg-black/50 p-1 text-white hover:bg-black/70"
+                              className="absolute right-2 bottom-2 rounded bg-black/50 p-1 text-white hover:bg-black/70"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -588,6 +679,16 @@ export function ScenesStep() {
         }}
         generatingAsset={false}
         assetType="scene"
+        existingAssets={(activeScene?.assets || []).filter((a: any) => a.type === 'image').map((a: any) => ({
+          id: a.id,
+          url: a.url,
+          name: a.prompt,
+          comfyAssetId: a.comfyAssetId,
+        }))}
+        onExistingAssetSelected={(asset) => {
+          referenceAssetIdRef.current = asset.comfyAssetId;
+          referenceAssetContentRef.current = asset.name;
+        }}
         onClose={() => {
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
@@ -603,20 +704,16 @@ export function ScenesStep() {
           const token =
             typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
           const scene = scenesResult[activeIndex];
-          const promptParts = [
-            scene.location,
-            scene.timeOfDay,
-            scene.weather,
-            assetForm.prompt,
-          ].filter(Boolean);
-          const fullPrompt = promptParts.join(', ');
+          // assetForm.prompt 已经包含完整的场景描述，直接使用
+          const fullPrompt = assetForm.prompt;
 
+          // 1. Add placeholder asset (only in memory, not saved to DB)
           const nextScenes = [...scenesResult];
           const nextAssets = nextScenes[activeIndex].assets || [];
-          const newAssetIndex = nextAssets.length;
+          const placeholderAssetId = `asset-${Date.now()}`;
           nextAssets.push({
-            id: `asset-${Date.now()}`,
-            type: assetForm.type,
+            id: placeholderAssetId,
+            type: 'image',
             url: '/placeholder.png',
             prompt: fullPrompt,
             tags: [],
@@ -628,7 +725,7 @@ export function ScenesStep() {
             ...nextScenes[activeIndex],
             assets: nextAssets,
           };
-          await persistScenes(nextScenes);
+          setScenesResult(nextScenes);
 
           setShowAssetForm(false);
           setAssetForm(createEmptyAssetForm());
@@ -643,13 +740,11 @@ export function ScenesStep() {
               },
               body: JSON.stringify({
                 projectId,
-                taskType: referenceImage || referenceAssetIdRef.current ? 'createScenePicture-i2i' : 'createScenePicture-t2i',
+                taskType: '场景生成',
                 step: 'scenes',
-                sceneId: activeIndex !== null ? scenesResult[activeIndex]?.id : undefined,
+                sceneId: scene?.id,
                 prompt: fullPrompt,
-                requestContext: {
-                  'imageId-1': referenceAssetIdRef.current,
-                },
+                referenceAssetIds: referenceImage || referenceAssetIdRef.current ? [referenceAssetIdRef.current] : [],
               }),
             });
 
@@ -660,9 +755,10 @@ export function ScenesStep() {
 
             pendingScenesRef.current.set(taskId, {
               sceneIndex: activeIndex,
-              assetIndex: newAssetIndex,
+              assetIndex: nextAssets.length - 1,
             });
           } catch (submitError: any) {
+            // Rollback: remove placeholder
             const rollback = [...scenesResult];
             rollback[activeIndex].assets?.pop();
             await persistScenes(rollback);
@@ -756,9 +852,17 @@ export function ScenesStep() {
                     setAiGeneratingScenes(false);
                   }
                 }}
-                className="rounded-lg bg-primary px-4 py-2 text-primary-foreground hover:opacity-90"
+                disabled={aiGeneratingScenes}
+                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >
-                开始生成
+                {aiGeneratingScenes ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    AI 正在生成场景...
+                  </>
+                ) : (
+                  '开始生成'
+                )}
               </button>
             </div>
           </div>
@@ -840,10 +944,16 @@ export function ScenesStep() {
                       .map((index) => {
                         const scene = aiGeneratedScenes[index];
                         if (!scene) return null;
-                        // 将AI返回的type映射到location字段
                         return {
-                          ...scene,
-                          location: scene.type || scene.location || '',
+                          id: `scene-${Date.now()}-${index}`,
+                          name: scene.name || '',
+                          location: scene.location || '',
+                          timeOfDay: scene.timeOfDay || '白天',
+                          weather: scene.weather || '晴朗',
+                          description: scene.description || '',
+                          elements: scene.elements || [],
+                          assets: [],
+                          status: 'pending' as const,
                         };
                       })
                       .filter(Boolean);
@@ -888,6 +998,7 @@ export function ScenesStep() {
           imageUrl={panoramaImage}
           title={activeScene?.name || '场景全景图'}
           onClose={() => setPanoramaImage(null)}
+          onScreenshot={handlePanoramaScreenshot}
         />
       )}
     </div>

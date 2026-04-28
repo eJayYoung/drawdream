@@ -134,18 +134,23 @@ export function CharactersStep() {
       const mapping = pending.get(data.taskId);
       if (!mapping) return;
 
-      if (data.status === 'completed' && data.outputResult?.assets) {
-        const assets = data.outputResult.assets as string[];
-        // Update the specific character asset
-        const nextCharacters = [...charactersResult];
-        const char = nextCharacters[mapping.characterIndex];
-        if (char?.assets?.[mapping.assetIndex]) {
-          // Replace placeholder with first real asset URL
-          char.assets[mapping.assetIndex] = {
-            ...char.assets[mapping.assetIndex],
-            url: assets[0] || '/placeholder.png', // TODO: 保持 /placeholder.png 会触发 loading 动画
-          };
-          void persistCharacters(nextCharacters);
+      if (data.status === 'completed') {
+        // 直接从数据库获取最新角色数据更新前端状态
+        if (mapping.characterIndex !== null && mapping.characterIndex !== undefined) {
+          const charId = charactersResult[mapping.characterIndex]?.id;
+          if (charId) {
+            const token = localStorage.getItem('accessToken');
+            fetch(`${API_URL}/api/characters/${charId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+              .then((res) => res.json())
+              .then((updatedChar) => {
+                const nextCharacters = [...charactersResult];
+                nextCharacters[mapping.characterIndex] = updatedChar;
+                setCharactersResult(nextCharacters);
+              })
+              .catch((e) => console.error('Failed to refresh character:', e));
+          }
         }
         pending.delete(data.taskId);
       } else if (data.status === 'failed') {
@@ -299,6 +304,19 @@ export function CharactersStep() {
                         onClick={async (event) => {
                           event.stopPropagation();
                           if (!confirm('确定删除这个角色吗？')) return;
+                          const charToDelete = charactersResult[index];
+                          // 先从数据库删除（如果有真实 id）
+                          if (charToDelete?.id && !charToDelete.id.startsWith('character-')) {
+                            try {
+                              const token = typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
+                              await fetch(`${API_URL}/api/characters/${charToDelete.id}`, {
+                                method: 'DELETE',
+                                headers: { Authorization: `Bearer ${token}` },
+                              });
+                            } catch (e) {
+                              console.error('删除角色失败:', e);
+                            }
+                          }
                           const nextCharacters = charactersResult.filter(
                             (_, itemIndex) => itemIndex !== index,
                           );
@@ -954,15 +972,16 @@ export function CharactersStep() {
           ].filter(Boolean).join(', ');
 
           const fullPrompt = `${characterPrompt}${assetForm.prompt ? ', ' + assetForm.prompt : ''}`;
+          const charId = selectedCharacterIndex !== null ? charactersResult[selectedCharacterIndex]?.id : undefined;
 
-          // 1. Add pending asset with placeholder — don't block on generation
+          // 1. Add placeholder asset (only in memory, not saved to DB)
           const nextCharacters = [...charactersResult];
           const nextAssets = nextCharacters[selectedCharacterIndex].assets || [];
-          const newAssetIndex = nextAssets.length;
+          const placeholderAssetId = `asset-${Date.now()}`;
           nextAssets.push({
-            id: `asset-${Date.now()}`,
+            id: placeholderAssetId,
             type: assetForm.type,
-            url: '/placeholder.png', // will be replaced via WebSocket
+            url: '/placeholder.png',
             prompt: fullPrompt,
             tags: [],
             angle: assetForm.angle,
@@ -973,7 +992,7 @@ export function CharactersStep() {
             ...nextCharacters[selectedCharacterIndex],
             assets: nextAssets,
           };
-          await persistCharacters(nextCharacters);
+          setCharactersResult(nextCharacters);
 
           // 2. Close modal immediately
           setShowAssetForm(false);
@@ -982,6 +1001,10 @@ export function CharactersStep() {
 
           // 3. Submit generation task
           try {
+            const referenceAssetIds = referenceImage || referenceAssetIdRef.current
+              ? [referenceAssetIdRef.current]
+              : [];
+
             const res = await fetch(`${API_URL}/api/generation/workflow`, {
               method: 'POST',
               headers: {
@@ -990,13 +1013,11 @@ export function CharactersStep() {
               },
               body: JSON.stringify({
                 projectId,
-                taskType: referenceImage || referenceAssetIdRef.current ? 'createRolePicture-i2i' : 'createRolePicture-t2i',
+                taskType: '角色生成',
                 step: 'characters',
-                characterId: selectedCharacterIndex !== null ? charactersResult[selectedCharacterIndex]?.id : undefined,
+                characterId: charId,
                 prompt: fullPrompt,
-                requestContext: {
-                  'imageId-1': referenceAssetIdRef.current,
-                }
+                referenceAssetIds,
               }),
             });
 
@@ -1008,10 +1029,10 @@ export function CharactersStep() {
             // 4. Register pending mapping so WebSocket can update the right asset
             pendingAssetsRef.current.set(taskId, {
               characterIndex: selectedCharacterIndex,
-              assetIndex: newAssetIndex,
+              assetIndex: nextAssets.length - 1,
             });
           } catch (submitError: any) {
-            // Rollback: remove the placeholder asset on failure
+            // Rollback: remove placeholder
             const rollback = [...charactersResult];
             rollback[selectedCharacterIndex].assets?.pop();
             await persistCharacters(rollback);
