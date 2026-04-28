@@ -23,6 +23,7 @@ const DEFAULT_NEGATIVE_PROMPT =
 
 type StoryboardItem = {
   id: string;
+  episodeId?: string;
   title: string;
   shotNumber: number;
   sceneNumber: number;
@@ -30,9 +31,6 @@ type StoryboardItem = {
   sceneLabel: string;
   scriptId: string;
   scriptTitle: string;
-  beat: string;
-  narrativePurpose: string;
-  dramaticConflict: string;
   shotType: string;
   cameraAngle: string;
   cameraMovement: string;
@@ -43,17 +41,15 @@ type StoryboardItem = {
   charactersInShot: string[];
   selectedCharacterAssetIds: string[];
   selectedSceneAssetIds: string[];
-  action: string;
-  dialogue: string;
-  narration: string;
-  soundDesign: string;
-  continuityNotes: string;
-  directorNotes: string;
   imagePrompt: string;
   negativePrompt: string;
   imageUrl: string;
+  comfyAssetId: string;
+  allImageUrls: string[];
+  allComfyAssetIds: string[];
   generationStatus: "idle" | "queued" | "generating" | "completed" | "failed";
   generationTaskId: string;
+  generationTaskType: string;
   generatedAt: string;
   source: "manual" | "ai";
   createdAt: string;
@@ -332,10 +328,6 @@ const buildPromptFromStoryboard = (storyboard: Partial<StoryboardItem>) =>
   [
     "电影分镜预览画面",
     storyboard.sceneLabel ? `场景 ${storyboard.sceneLabel}` : "",
-    storyboard.beat ? `剧情节拍 ${storyboard.beat}` : "",
-    storyboard.narrativePurpose
-      ? `叙事目标 ${storyboard.narrativePurpose}`
-      : "",
     storyboard.shotType ? `景别 ${storyboard.shotType}` : "",
     storyboard.cameraAngle ? `机位 ${storyboard.cameraAngle}` : "",
     storyboard.cameraMovement ? `运镜 ${storyboard.cameraMovement}` : "",
@@ -345,8 +337,6 @@ const buildPromptFromStoryboard = (storyboard: Partial<StoryboardItem>) =>
     storyboard.charactersInShot?.length
       ? `画面角色 ${storyboard.charactersInShot.join("、")}`
       : "",
-    storyboard.action ? `画面动作 ${storyboard.action}` : "",
-    storyboard.dialogue ? `对白语境 ${storyboard.dialogue}` : "",
     "cinematic storyboard frame, dramatic lighting, clear blocking, coherent character design",
   ]
     .filter(Boolean)
@@ -366,11 +356,7 @@ const normalizeStoryboard = (
 
   const mergedText = [
     sanitizeText(raw?.description),
-    sanitizeText(raw?.action),
-    sanitizeText(raw?.dialogue),
-    sanitizeText(raw?.narration),
     sanitizeText(raw?.imagePrompt),
-    sanitizeText(raw?.beat),
   ]
     .filter(Boolean)
     .join(" ");
@@ -384,6 +370,7 @@ const normalizeStoryboard = (
 
   const item: StoryboardItem = {
     id: raw?.id || `storyboard-${Date.now()}-${index}`,
+    episodeId: raw?.episodeId,
     title: sanitizeText(raw?.title) || `镜头 ${index + 1}`,
     shotNumber: normalizeNumber(raw?.shotNumber, index + 1),
     sceneNumber,
@@ -394,14 +381,6 @@ const normalizeStoryboard = (
       ) || `场景 ${sceneNumber}`,
     scriptId: raw?.scriptId || "",
     scriptTitle: raw?.scriptTitle || "",
-    beat: sanitizeText(
-      raw?.beat ||
-        matchedScene?.name ||
-        matchedScene?.description ||
-        raw?.description,
-    ),
-    narrativePurpose: sanitizeText(raw?.narrativePurpose || raw?.objective),
-    dramaticConflict: sanitizeText(raw?.dramaticConflict || raw?.conflict),
     shotType,
     cameraAngle: sanitizeText(raw?.cameraAngle || raw?.angle),
     cameraMovement:
@@ -422,19 +401,17 @@ const normalizeStoryboard = (
     selectedSceneAssetIds: Array.isArray(raw?.selectedSceneAssetIds)
       ? uniqueList(raw.selectedSceneAssetIds)
       : [],
-    action: sanitizeText(raw?.action || raw?.description),
-    dialogue: sanitizeText(raw?.dialogue),
-    narration: sanitizeText(raw?.narration),
-    soundDesign: sanitizeText(raw?.soundDesign),
-    continuityNotes: sanitizeText(raw?.continuityNotes),
-    directorNotes: sanitizeText(raw?.directorNotes),
     imagePrompt: sanitizeText(raw?.imagePrompt),
     negativePrompt:
       sanitizeText(raw?.negativePrompt) || DEFAULT_NEGATIVE_PROMPT,
     imageUrl: sanitizeText(raw?.imageUrl),
+    comfyAssetId: sanitizeText(raw?.comfyAssetId) || '',
+    allImageUrls: Array.isArray(raw?.allImageUrls) ? raw.allImageUrls : [],
+    allComfyAssetIds: Array.isArray(raw?.allComfyAssetIds) ? raw.allComfyAssetIds : [],
     generationStatus:
       raw?.generationStatus || (raw?.imageUrl ? "completed" : "idle"),
     generationTaskId: sanitizeText(raw?.generationTaskId),
+    generationTaskType: sanitizeText(raw?.generationTaskType) || '',
     generatedAt: sanitizeText(raw?.generatedAt),
     source: raw?.source === "manual" ? "manual" : "ai",
     createdAt: raw?.createdAt || new Date().toISOString(),
@@ -504,6 +481,10 @@ const findStoryboardIndexById = (
 };
 
 const extractTaskImages = (outputResult: any) => {
+  // Prefer assets (OSS URLs) over images (ComfyUI IDs)
+  if (Array.isArray(outputResult?.assets) && outputResult.assets.length > 0) {
+    return outputResult.assets.filter(Boolean);
+  }
   if (Array.isArray(outputResult?.images)) {
     return outputResult.images.filter(Boolean);
   }
@@ -708,6 +689,7 @@ export function StoryboardStep() {
   );
   const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [storyboardPreviewImage, setStoryboardPreviewImage] = useState<string | null>(null);
   const [selectedScriptForGeneration, setSelectedScriptForGeneration] =
     useState(0);
   const [generatingFromScript, setGeneratingFromScript] = useState(false);
@@ -739,6 +721,7 @@ export function StoryboardStep() {
       if (char.assets && char.assets.length > 0) {
         char.assets.forEach((asset: any, assetIndex: number) => {
           if (asset.url && asset.url !== '/placeholder.png') {
+            console.log('[mentionOptions] char asset:', char.name, 'asset.comfyAssetId:', asset.comfyAssetId, 'asset:', asset);
             options.push({
               id: `char-${charIndex}-${assetIndex}`,
               name: char.name || `角色${charIndex + 1}`,
@@ -756,6 +739,7 @@ export function StoryboardStep() {
       if (scene.assets && scene.assets.length > 0) {
         scene.assets.forEach((asset: any, assetIndex: number) => {
           if (asset.url && asset.url !== '/placeholder.png') {
+            console.log('[mentionOptions] scene asset:', scene.name, 'asset.comfyAssetId:', asset.comfyAssetId, 'asset:', asset);
             options.push({
               id: `scene-${sceneIndex}-${assetIndex}`,
               name: scene.name || `场景${sceneIndex + 1}`,
@@ -768,6 +752,7 @@ export function StoryboardStep() {
       }
     });
 
+    console.log('[mentionOptions] total options:', options.length, 'with comfyAssetId:', options.filter(o => o.comfyAssetId).length);
     return options;
   }, [charactersResult, scenesResult]);
 
@@ -792,8 +777,10 @@ export function StoryboardStep() {
   };
 
   const handleSelectMention = (option: typeof mentionOptions[0]) => {
+    console.log('[handleSelectMention] option:', option.name, 'type:', option.type, 'comfyAssetId:', option.comfyAssetId);
     // Find the @ that was just typed (the last unclosed @)
-    const currentPrompt = activeStoryboard?.imagePrompt || '';
+    // Use draftStoryboard directly to avoid stale state issues
+    const currentPrompt = draftStoryboard?.imagePrompt || '';
     const lastAtIndex = currentPrompt.lastIndexOf('@');
     if (lastAtIndex !== -1) {
       // Check that there's no space between @ and cursor
@@ -803,8 +790,10 @@ export function StoryboardStep() {
         const typePrefix = option.type === 'scene' ? '[场景]' : '';
         const newPrompt = before + '@' + typePrefix + option.name + ' ';
         updateDraft({ imagePrompt: newPrompt });
-        // Store the mention with image URL and comfyAssetId
-        setMentionAssets(prev => [...prev, { displayText: `@${option.name}`, imageUrl: option.imageUrl, comfyAssetId: option.comfyAssetId, type: option.type }]);
+        // Store the mention with image URL and comfyAssetId (use same typePrefix for displayText)
+        const displayText = `@${typePrefix}${option.name}`;
+        console.log('[handleSelectMention] adding to mentionAssets, displayText:', displayText, 'comfyAssetId:', option.comfyAssetId);
+        setMentionAssets(prev => [...prev, { displayText, imageUrl: option.imageUrl, comfyAssetId: option.comfyAssetId, type: option.type }]);
       }
     }
     setShowMentionDropdown(false);
@@ -1071,6 +1060,19 @@ export function StoryboardStep() {
     if (!target) return;
     if (!window.confirm(`确定删除 ${target.title} 吗？`)) return;
 
+    // 先从数据库删除（如果有真实 id）
+    if (target.id && !target.id.startsWith('storyboard-')) {
+      try {
+        const token = typeof window === 'undefined' ? null : localStorage.getItem('accessToken');
+        await fetch(`${API_URL}/api/storyboards/${target.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (e) {
+        console.error('删除分镜失败:', e);
+      }
+    }
+
     const nextItems = baseItems.filter((_, itemIndex) => itemIndex !== index);
     const nextSelectedId =
       nextItems.length === 0
@@ -1208,23 +1210,35 @@ export function StoryboardStep() {
         }
       };
 
-      // 并发所有请求
-      const results = await Promise.all(
-        scenes.map((scene, i) => fetchSceneStoryboards(scene, i)),
-      );
-
-      // 按场景顺序更新UI（结果已按索引排序）
+      // 并发所有请求，实时更新UI
       const allCandidates: StoryboardItem[] = [];
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i];
-        allCandidates.push(...result.candidates);
-        // 逐步更新，让用户看到进度
-        setGeneratedCandidates([...allCandidates]);
-        setSelectedCandidateIds(allCandidates.map((item: StoryboardItem) => item.id));
-        setGenerationProgress({ current: i + 1, total: scenes.length });
-        // 短暂延迟让UI可以渲染
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+      let completedCount = 0;
+
+      // 初始化显示区域
+      setGeneratedCandidates([]);
+      setSelectedCandidateIds([]);
+
+      // 并发请求，每个完成后立即更新UI
+      await Promise.all(
+        scenes.map((scene, i) =>
+          fetchSceneStoryboards(scene, i).then((result) => {
+            completedCount++;
+            // 将结果按顺序插入（按index排序后追加）
+            const insertIndex = allCandidates.length;
+            allCandidates.push(...result.candidates);
+            // 按index排序确保顺序正确
+            allCandidates.sort((a, b) => a.shotNumber - b.shotNumber);
+            // 更新UI
+            setGeneratedCandidates([...allCandidates]);
+            setSelectedCandidateIds(allCandidates.map((item) => item.id));
+            setGenerationProgress({ current: completedCount, total: scenes.length });
+          }).catch((err) => {
+            completedCount++;
+            setGenerationProgress({ current: completedCount, total: scenes.length });
+            console.error(`Scene ${i + 1} failed:`, err);
+          })
+        ),
+      );
 
       updateStepStatus(
         "storyboard",
@@ -1268,6 +1282,7 @@ export function StoryboardStep() {
             ...item,
             id: `storyboard-${Date.now()}-${index}`,
             generationTaskId: "",
+            generationTaskType: '',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             // 保留脚本绑定信息
@@ -1295,15 +1310,15 @@ export function StoryboardStep() {
     setSelectedCandidateIds([]);
   };
 
-  const waitForTaskCompletion = async (taskId: string, token: string) => {
+  const waitForTaskCompletion = async (taskId: string, token: string, taskType?: string) => {
     for (let attempt = 0; attempt < 90; attempt += 1) {
-      const response = await fetch(
-        `${API_URL}/api/generation/tasks/${taskId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        },
-      );
+      const url = taskType
+        ? `${API_URL}/api/generation/tasks/${taskId}?taskType=${encodeURIComponent(taskType)}`
+        : `${API_URL}/api/generation/tasks/${taskId}`;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
 
       if (!response.ok) {
         throw new Error("读取生图任务状态失败。");
@@ -1356,60 +1371,50 @@ export function StoryboardStep() {
     ).slice(0, 3);
 
     // 检查是否有 @ 引用且都有 comfyAssetId，如果有则用智能分镜
-    // 从源数据重新查找最新的 comfyAssetId（因为 mentionAssets 可能是引用时的快照）
-    const mentionWithAssetIds = mentionAssets
-      .map(m => {
-        // 从 charactersResult 和 scenesResult 中查找最新的 comfyAssetId
-        let comfyAssetId = m.comfyAssetId;
-        for (const char of charactersResult) {
-          const asset = char.assets?.find((a: any) => a.url === m.imageUrl || a.id === m.displayText);
-          if (asset?.comfyAssetId) comfyAssetId = asset.comfyAssetId;
+    // mentionAssets 存储时已经有 comfyAssetId，直接使用
+    let mentionWithAssetIds = mentionAssets.filter(m => m.comfyAssetId);
+
+    // 如果 mentionAssets 为空但 prompt 中有 @ 提及，尝试从 mentionOptions 匹配
+    if (mentionWithAssetIds.length === 0 && prompt.includes('@')) {
+      const mentionedNames: string[] = [];
+      const atMatches = prompt.match(/@(\[场景\])?([^@\s]+)/g) || [];
+      for (const match of atMatches) {
+        const name = match.replace('@[场景]', '').replace('@', '').trim();
+        if (name) mentionedNames.push(name);
+      }
+
+      // 从 mentionOptions 中查找匹配的资产
+      for (const name of mentionedNames) {
+        const option = mentionOptions.find(opt =>
+          opt.name === name ||
+          (opt.type === 'scene' && `[场景]${opt.name}` === name)
+        );
+        if (option?.comfyAssetId) {
+          mentionWithAssetIds.push({
+            displayText: option.type === 'scene' ? `@[场景]${name}` : `@${name}`,
+            imageUrl: option.imageUrl,
+            comfyAssetId: option.comfyAssetId,
+            type: option.type,
+          });
         }
-        for (const scene of scenesResult) {
-          const asset = scene.assets?.find((a: any) => a.url === m.imageUrl || a.id === m.displayText);
-          if (asset?.comfyAssetId) comfyAssetId = asset.comfyAssetId;
-        }
-        return { ...m, comfyAssetId };
-      })
-      .filter(m => m.comfyAssetId);
+      }
+    }
+
     const hasSmartStoryboard = mentionWithAssetIds.length > 0;
+    console.log('[生图调试] hasSmartStoryboard:', hasSmartStoryboard, 'mentionWithAssetIds:', mentionWithAssetIds, 'mentionAssets:', mentionAssets);
 
-    let taskType =
-      project?.aspectRatio === "9:16"
-        ? "scene_image_portrait"
-        : "scene_image_landscape";
-    let inputParams: Record<string, unknown> = {
-      prompt,
-      negative_prompt: negativePrompt,
-    };
+    const taskType = "分镜图生成";
+    let finalPrompt = prompt;
 
+    // 如果是智能分镜，替换 prompt 中的 @资产名 为 图1, 图2 等
     if (hasSmartStoryboard) {
-      taskType = "createStoryBoard";
-      // 构建智能分镜 prompt：把 @资产名 替换成 图1, 图2 等
-      let smartPrompt = prompt;
+      const assetIds = mentionWithAssetIds.map(m => m.comfyAssetId);
       mentionWithAssetIds.forEach((m, index) => {
         const regex = new RegExp(m.displayText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        smartPrompt = smartPrompt.replace(regex, `图${index + 1}`);
+        finalPrompt = finalPrompt.replace(regex, `图${index + 1}`);
+        // 同时替换 ImageId-1, ImageId-2 等占位符
+        finalPrompt = finalPrompt.replace(new RegExp(`ImageId-${index + 1}`, 'g'), assetIds[index] || '');
       });
-      inputParams = {
-        prompt: smartPrompt,
-        negative_prompt: negativePrompt,
-        assetIds: mentionWithAssetIds.map(m => m.comfyAssetId),
-      };
-    } else if (references.length > 1) {
-      taskType = "multi_ref_image";
-      inputParams = {
-        reference_images: references,
-        prompt,
-        negative_prompt: negativePrompt,
-      };
-    } else if (references.length === 1) {
-      taskType = "scene_image_ref";
-      inputParams = {
-        reference_image: references[0],
-        prompt,
-        negative_prompt: negativePrompt,
-      };
     }
 
     const workingItem = normalizeStoryboard(
@@ -1417,7 +1422,9 @@ export function StoryboardStep() {
         ...activeStoryboard,
         imagePrompt: prompt,
         negativePrompt,
+        imageUrl: '/placeholder.png', // placeholder for loading state
         generationStatus: "queued",
+        generationTaskType: taskType,
         updatedAt: new Date().toISOString(),
       },
       activeIndex,
@@ -1435,8 +1442,8 @@ export function StoryboardStep() {
     try {
       let queueResponse;
       if (hasSmartStoryboard) {
-        // 智能分镜：使用资产引用
-        const smartParams = inputParams as { prompt: string; negative_prompt: string; assetIds: string[] };
+        // 智能分镜：使用资产引用，调用 smart-storyboard 接口
+        const assetIds = mentionWithAssetIds.map(m => m.comfyAssetId);
         queueResponse = await fetch(`${API_URL}/api/generation/smart-storyboard`, {
           method: "POST",
           headers: {
@@ -1445,19 +1452,15 @@ export function StoryboardStep() {
           },
           body: JSON.stringify({
             projectId,
-            prompt: smartParams.prompt,
-            assetIds: smartParams.assetIds,
+            taskType: "分镜图生成",
+            prompt: finalPrompt,
+            assetIds,
             episodeId: activeStoryboard.episodeId,
             storyboardId: activeStoryboard.id,
           }),
         });
       } else {
         // 普通生成：调 workflow 接口
-        const inParamStr = JSON.stringify({
-          prompt: (inputParams.prompt as string) || '',
-          negative_prompt: (inputParams.negative_prompt as string) || '',
-          ...inputParams,
-        });
         queueResponse = await fetch(`${API_URL}/api/generation/workflow`, {
           method: "POST",
           headers: {
@@ -1466,9 +1469,11 @@ export function StoryboardStep() {
           },
           body: JSON.stringify({
             projectId,
-            taskType,
-            prompt: (inputParams.prompt as string) || '',
-            inParam: inParamStr,
+            taskType: "分镜图生成",
+            step: "storyboard",
+            prompt: finalPrompt,
+            referenceAssetIds: references,
+            inParam: JSON.stringify({ negative_prompt: negativePrompt }),
             episodeId: activeStoryboard.episodeId,
             storyboardId: activeStoryboard.id,
           }),
@@ -1485,6 +1490,7 @@ export function StoryboardStep() {
           ...workingItem,
           generationStatus: "generating",
           generationTaskId: queuedTask.taskId || "",
+          generationTaskType: taskType,
         },
         activeIndex,
         scenesResult,
@@ -1499,16 +1505,21 @@ export function StoryboardStep() {
       const completedTask = await waitForTaskCompletion(
         queuedTask.taskId,
         token,
+        taskType,
       );
-      const images = extractTaskImages(completedTask.outputResult);
+      const images = extractTaskImages(completedTask.outputs);
       if (images.length === 0) {
         throw new Error("任务已完成，但没有返回可用图片。");
       }
+      const comfyAssetIds = (completedTask.outputs as any)?.comfyAssetIds || [];
 
       const completedItem = normalizeStoryboard(
         {
           ...generatingItem,
           imageUrl: images[0],
+          comfyAssetId: comfyAssetIds[0] || '',
+          allImageUrls: images,
+          allComfyAssetIds: comfyAssetIds,
           generationStatus: "completed",
           generatedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1517,6 +1528,7 @@ export function StoryboardStep() {
         scenesResult,
         charactersResult,
       );
+      console.log('[保存分镜] completedItem.imageUrl:', completedItem.imageUrl, 'comfyAssetId:', completedItem.comfyAssetId);
       const completedItems = generatingItems.map((item) =>
         item.id === activeStoryboardId ? completedItem : item,
       );
@@ -1582,7 +1594,7 @@ export function StoryboardStep() {
       )}
 
       <div className="flex flex-1 gap-3 min-h-0">
-        <div className="flex w-[460px] flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
+        <div className="flex w-[420px] flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-[0_4px_20px_hsl(217.2_60%_45%_/_0.1),_0_2px_8px_hsl(0_0%_0%_/_0.4)]">
           <div className="flex items-center justify-between neon-border-bottom neon-header p-3">
             <div className="text-sm font-medium">分镜列表</div>
             <div className="flex items-center gap-2">
@@ -1657,11 +1669,6 @@ export function StoryboardStep() {
                           </div>
                           <div className="truncate text-xs text-muted-foreground">
                             {item.sceneLabel} · {item.shotType}
-                          </div>
-                          <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                            {item.beat ||
-                              item.action ||
-                              "补充这个镜头的剧情节拍与画面动作"}
                           </div>
                           <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
                             <span>{item.durationSeconds}s</span>
@@ -1789,31 +1796,30 @@ export function StoryboardStep() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-auto p-3">
-                <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_340px]">
-                  <div className="space-y-3">
-                    <section className="rounded-xl border p-3">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium">镜头基础</div>
-                        <button
-                          type="button"
-                          onClick={() => void handleSaveCurrentEdits()}
-                          disabled={isSaving || !hasUnsavedChanges}
-                          className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-                        >
-                          {isSaving ? (
-                            <>
-                              <Loader2 size={14} className="animate-spin" />
-                              保存中
-                            </>
-                          ) : (
-                            <>
-                              <Save size={14} />
-                              保存
-                            </>
-                          )}
-                        </button>
-                      </div>
+              <div className="flex flex-1 gap-3 min-h-0">
+                <div className="w-[420px] shrink-0 overflow-auto space-y-3 py-3 pl-3">
+                  <section className="rounded-xl border p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium">镜头基础</div>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveCurrentEdits()}
+                        disabled={isSaving || !hasUnsavedChanges}
+                        className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+                      >
+                        {isSaving ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            保存中
+                          </>
+                        ) : (
+                          <>
+                            <Save size={14} />
+                            保存
+                          </>
+                        )}
+                      </button>
+                    </div>
 
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         <label className="space-y-1 text-sm">
@@ -2001,130 +2007,6 @@ export function StoryboardStep() {
                     </section>
 
                     <section className="rounded-xl border p-3">
-                      <div className="mb-3 text-sm font-medium">叙事设计</div>
-                      <div className="grid gap-3">
-                        <label className="space-y-1 text-sm">
-                          <span className="text-muted-foreground">
-                            剧情节拍
-                          </span>
-                          <textarea
-                            value={activeStoryboard.beat}
-                            onChange={(event) =>
-                              updateDraft({ beat: event.target.value })
-                            }
-                            className="min-h-[68px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                        </label>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <label className="space-y-1 text-sm">
-                            <span className="text-muted-foreground">
-                              叙事目的
-                            </span>
-                            <textarea
-                              value={activeStoryboard.narrativePurpose}
-                              onChange={(event) =>
-                                updateDraft({
-                                  narrativePurpose: event.target.value,
-                                })
-                              }
-                              className="min-h-[84px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
-                          </label>
-                          <label className="space-y-1 text-sm">
-                            <span className="text-muted-foreground">
-                              冲突焦点
-                            </span>
-                            <textarea
-                              value={activeStoryboard.dramaticConflict}
-                              onChange={(event) =>
-                                updateDraft({
-                                  dramaticConflict: event.target.value,
-                                })
-                              }
-                              className="min-h-[84px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
-                          </label>
-                        </div>
-                        <label className="space-y-1 text-sm">
-                          <span className="text-muted-foreground">
-                            画面动作
-                          </span>
-                          <textarea
-                            value={activeStoryboard.action}
-                            onChange={(event) =>
-                              updateDraft({ action: event.target.value })
-                            }
-                            className="min-h-[96px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                        </label>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <label className="space-y-1 text-sm">
-                            <span className="text-muted-foreground">对白</span>
-                            <textarea
-                              value={activeStoryboard.dialogue}
-                              onChange={(event) =>
-                                updateDraft({ dialogue: event.target.value })
-                              }
-                              className="min-h-[84px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
-                          </label>
-                          <label className="space-y-1 text-sm">
-                            <span className="text-muted-foreground">
-                              旁白 / 内心声
-                            </span>
-                            <textarea
-                              value={activeStoryboard.narration}
-                              onChange={(event) =>
-                                updateDraft({ narration: event.target.value })
-                              }
-                              className="min-h-[84px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
-                          </label>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <label className="space-y-1 text-sm">
-                            <span className="text-muted-foreground">
-                              声音设计
-                            </span>
-                            <textarea
-                              value={activeStoryboard.soundDesign}
-                              onChange={(event) =>
-                                updateDraft({ soundDesign: event.target.value })
-                              }
-                              className="min-h-[84px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
-                          </label>
-                          <label className="space-y-1 text-sm">
-                            <span className="text-muted-foreground">
-                              连戏备注
-                            </span>
-                            <textarea
-                              value={activeStoryboard.continuityNotes}
-                              onChange={(event) =>
-                                updateDraft({
-                                  continuityNotes: event.target.value,
-                                })
-                              }
-                              className="min-h-[84px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
-                          </label>
-                        </div>
-                        <label className="space-y-1 text-sm">
-                          <span className="text-muted-foreground">
-                            导演备注
-                          </span>
-                          <textarea
-                            value={activeStoryboard.directorNotes}
-                            onChange={(event) =>
-                              updateDraft({ directorNotes: event.target.value })
-                            }
-                            className="min-h-[84px] w-full resize-none rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                        </label>
-                      </div>
-                    </section>
-
-                    <section className="rounded-xl border p-3">
                       <div className="mb-3 text-sm font-medium">角色与资产</div>
                       <div className="space-y-4">
                         <div>
@@ -2191,21 +2073,23 @@ export function StoryboardStep() {
                     </section>
                   </div>
 
-                  <div className="space-y-3">
-                    <section className="rounded-xl border p-3">
-                      <div className="mb-3 text-sm font-medium">分镜图预览</div>
-                      {activeStoryboard.imageUrl ? (
-                        <img
-                          src={activeStoryboard.imageUrl}
-                          alt={activeStoryboard.title}
-                          className="aspect-video w-full rounded-lg object-cover"
-                        />
-                      ) : (
-                        <div className="flex aspect-video items-center justify-center rounded-lg bg-muted/50 text-sm text-muted-foreground">
-                          尚未生成分镜图
-                        </div>
-                      )}
-                    </section>
+                  <div className="flex-1 shrink-0 overflow-auto">
+                    <div className="space-y-3">
+                      <section className="rounded-xl border p-3">
+                        <div className="mb-3 text-sm font-medium">分镜图预览</div>
+                        {activeStoryboard.imageUrl ? (
+                          <img
+                            src={activeStoryboard.imageUrl}
+                            alt={activeStoryboard.title}
+                            className="aspect-video w-full rounded-lg object-cover cursor-pointer hover:opacity-90"
+                            onClick={() => setStoryboardPreviewImage(activeStoryboard.imageUrl)}
+                          />
+                        ) : (
+                          <div className="flex aspect-video items-center justify-center rounded-lg bg-muted/50 text-sm text-muted-foreground">
+                            尚未生成分镜图
+                          </div>
+                        )}
+                      </section>
 
                     <section className="rounded-xl border p-3">
                       <div className="mb-3 text-sm font-medium">生图提示词</div>
@@ -2241,6 +2125,7 @@ export function StoryboardStep() {
                                       className="h-8 w-8 rounded object-cover"
                                     />
                                     <span className="text-sm">{option.type === 'scene' ? '[场景] ' : ''}{option.name}</span>
+                                    {option.comfyAssetId && <span className="ml-2 text-xs text-muted-foreground">({option.comfyAssetId})</span>}
                                   </button>
                                 ))}
                               </div>
@@ -2393,6 +2278,21 @@ export function StoryboardStep() {
                 已选 {selectedCandidateIds.length} /{" "}
                 {generatedCandidates.length}
               </div>
+              {generatingFromScript && generationProgress.total > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-32 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{
+                        width: `${(generationProgress.current / generationProgress.total) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {generationProgress.current}/{generationProgress.total}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -2460,18 +2360,10 @@ export function StoryboardStep() {
                     <div className="space-y-2 text-sm">
                       <div>
                         <div className="text-xs text-muted-foreground">
-                          剧情节拍
+                          景别
                         </div>
                         <div className="line-clamp-2">
-                          {item.beat || "未提取到有效节拍"}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">
-                          画面动作
-                        </div>
-                        <div className="line-clamp-3">
-                          {item.action || "未提取到有效动作，可插入后再补充"}
+                          {item.shotType || "未设置"}
                         </div>
                       </div>
                     </div>
@@ -2500,6 +2392,26 @@ export function StoryboardStep() {
           </div>
         </div>
       ) : null}
+
+      {storyboardPreviewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setStoryboardPreviewImage(null)}
+        >
+          <button
+            className="absolute right-4 top-4 rounded-lg bg-white/10 p-2 text-white hover:bg-white/20"
+            onClick={() => setStoryboardPreviewImage(null)}
+          >
+            <X size={24} />
+          </button>
+          <img
+            src={storyboardPreviewImage}
+            alt="预览"
+            className="max-h-[90vh] max-w-[90vw] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
